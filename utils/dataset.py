@@ -122,6 +122,89 @@ class TUMParser:
             self.frames.append(frame)
 
 
+class RRXIOParser:
+    def __init__(self, input_folder, use_thermal=False):
+        self.input_folder = input_folder
+        self.use_thermal = use_thermal
+        self.load_poses(self.input_folder, frame_rate=32)
+        self.n_img = len(self.color_paths)
+
+    def parse_list(self, filepath, skiprows=0):
+        data = np.loadtxt(filepath, delimiter=" ", dtype=np.unicode_, skiprows=skiprows)
+        return data
+
+    def associate_frames(self, tstamp_image, tstamp_depth, tstamp_pose, max_dt=0.03):
+        associations = []
+        for i, t in enumerate(tstamp_image):
+            if tstamp_pose is None:
+                j = np.argmin(np.abs(tstamp_depth - t))
+                if np.abs(tstamp_depth[j] - t) < max_dt:
+                    associations.append((i, j))
+
+            else:
+                j = np.argmin(np.abs(tstamp_depth - t))
+                k = np.argmin(np.abs(tstamp_pose - t))
+
+                if (np.abs(tstamp_depth[j] - t) < max_dt) and (
+                    np.abs(tstamp_pose[k] - t) < max_dt
+                ):
+                    associations.append((i, j, k))
+
+        return associations
+
+    def load_poses(self, datapath, frame_rate=-1):
+        if self.use_thermal:
+            if os.path.isfile(os.path.join(self.input_folder, 'gt_thermal.txt')):
+                pose_list = os.path.join(self.input_folder, 'gt_thermal.txt')
+            image_list = os.path.join(self.input_folder, 'thermal.txt')
+            depth_list = os.path.join(self.input_folder, 'radart.txt')
+        else:
+            if os.path.isfile(os.path.join(self.input_folder, 'gt_visual.txt')):
+                pose_list = os.path.join(self.input_folder, 'gt_visual.txt')
+            image_list = os.path.join(self.input_folder, 'visual.txt')
+            depth_list = os.path.join(self.input_folder, 'radarv.txt')
+
+        image_data = self.parse_list(image_list)
+        depth_data = self.parse_list(depth_list)
+        pose_data = self.parse_list(pose_list, skiprows=1)
+        pose_vecs = pose_data[:, 0:].astype(np.float64)
+
+        tstamp_image = image_data[:, 0].astype(np.float64)
+        tstamp_depth = depth_data[:, 0].astype(np.float64)
+        tstamp_pose = pose_data[:, 0].astype(np.float64)
+        associations = self.associate_frames(tstamp_image, tstamp_depth, tstamp_pose)
+        print('Found {} associations out of {} images, {} depth images and {} poses'.format(
+                len(associations), len(tstamp_image), len(tstamp_depth), len(tstamp_pose)))
+
+        indicies = [0]
+        for i in range(1, len(associations)):
+            t0 = tstamp_image[associations[indicies[-1]][0]]
+            t1 = tstamp_image[associations[i][0]]
+            if t1 - t0 > 1.0 / frame_rate:
+                indicies += [i]
+
+        self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
+
+        for ix in indicies:
+            (i, j, k) = associations[ix]
+            self.color_paths += [os.path.join(datapath, image_data[i, 1])]
+            self.depth_paths += [os.path.join(datapath, depth_data[j, 1])]
+
+            quat = pose_vecs[k][4:]
+            trans = pose_vecs[k][1:4]
+            T = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
+            T[:3, 3] = trans
+            self.poses += [np.linalg.inv(T)]
+
+            frame = {
+                "file_path": str(os.path.join(datapath, image_data[i, 1])),
+                "depth_path": str(os.path.join(datapath, depth_data[j, 1])),
+                "transform_matrix": (np.linalg.inv(T)).tolist(),
+            }
+
+            self.frames.append(frame)
+
+
 class EuRoCParser:
     def __init__(self, input_folder, start_idx=0):
         self.input_folder = input_folder
@@ -210,37 +293,68 @@ class MonocularDataset(BaseDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         calibration = config["Dataset"]["Calibration"]
+        cam0raw = calibration["raw"]
+        cam0opt = calibration["opt"]
         # Camera prameters
-        self.fx = calibration["fx"]
-        self.fy = calibration["fy"]
-        self.cx = calibration["cx"]
-        self.cy = calibration["cy"]
-        self.width = calibration["width"]
-        self.height = calibration["height"]
+        self.fx = cam0opt["fx"]
+        self.fy = cam0opt["fy"]
+        self.cx = cam0opt["cx"]
+        self.cy = cam0opt["cy"]
+        self.width = cam0opt["width"]
+        self.height = cam0opt["height"]
         self.fovx = focal2fov(self.fx, self.width)
         self.fovy = focal2fov(self.fy, self.height)
         self.K = np.array(
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
         )
+        self.K_raw = np.array(
+            [[cam0raw["fx"], 0.0, cam0raw["cx"]], [0.0, cam0raw["fy"], cam0raw["cy"],], [0.0, 0.0, 1.0],]
+        )
         # distortion parameters
-        self.disorted = calibration["distorted"]
-        self.dist_coeffs = np.array(
-            [
-                calibration["k1"],
-                calibration["k2"],
-                calibration["p1"],
-                calibration["p2"],
-                calibration["k3"],
-            ]
-        )
-        self.map1x, self.map1y = cv2.initUndistortRectifyMap(
-            self.K,
-            self.dist_coeffs,
-            np.eye(3),
-            self.K,
-            (self.width, self.height),
-            cv2.CV_32FC1,
-        )
+        self.disorted = cam0raw["distorted"]
+
+        if 'distortion_model' in cam0raw.keys():
+            self.distortion_model = cam0raw['distortion_model']
+        else:
+            self.distortion_model = 'radtan'
+        print(f"Distortion model: {self.distortion_model}")
+
+        if self.distortion_model == 'radtan':
+            self.dist_coeffs = np.array(
+                [
+                    cam0raw["k1"],
+                    cam0raw["k2"],
+                    cam0raw["p1"],
+                    cam0raw["p2"],
+                    cam0raw["k3"],
+                ]
+            )
+            self.map1x, self.map1y = cv2.initUndistortRectifyMap(
+                self.K_raw,
+                self.dist_coeffs,
+                np.eye(3),
+                self.K,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
+        else:
+            self.dist_coeffs = np.array(
+                [
+                    cam0raw["k1"],
+                    cam0raw["k2"],
+                    cam0raw["k3"],
+                    cam0raw["k4"]
+                ]
+            )
+            self.map1x, self.map1y = cv2.fisheye.initUndistortRectifyMap(
+                self.K_raw,
+                self.dist_coeffs,
+                np.eye(3),
+                self.K,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
+    
         # depth parameters
         self.has_depth = True if "depth_scale" in calibration.keys() else False
         self.depth_scale = calibration["depth_scale"] if self.has_depth else None
@@ -257,12 +371,18 @@ class MonocularDataset(BaseDataset):
     def __getitem__(self, idx):
         color_path = self.color_paths[idx]
         pose = self.poses[idx]
-
-        image = np.array(Image.open(color_path))
+        img = cv2.imread(color_path)
+        if len(img.shape) == 2 or img.shape[2] == 1:
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        else:
+            rgb_img = img
+        image = np.array(rgb_img)
         depth = None
 
         if self.disorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+            # cv2.imshow("undistorted", image)
+            # cv2.waitKey(3000)
 
         if self.has_depth:
             depth_path = self.depth_paths[idx]
@@ -338,29 +458,82 @@ class StereoDataset(BaseDataset):
 
         # distortion parameters
         self.disorted = calibration["distorted"]
-        self.dist_coeffs = np.array(
-            [cam0raw["k1"], cam0raw["k2"], cam0raw["p1"], cam0raw["p2"], cam0raw["k3"]]
-        )
-        self.map1x, self.map1y = cv2.initUndistortRectifyMap(
-            self.K_raw,
-            self.dist_coeffs,
-            self.Rmat,
-            self.K,
-            (self.width, self.height),
-            cv2.CV_32FC1,
-        )
+        if 'distortion_model' in calibration.keys():
+            self.distortion_model = calibration['distortion_model']
+        else:
+            self.distortion_model = 'radtan'
+        print(f"Distortion model: {self.distortion_model}")
 
-        self.dist_coeffs_r = np.array(
-            [cam1raw["k1"], cam1raw["k2"], cam1raw["p1"], cam1raw["p2"], cam1raw["k3"]]
-        )
-        self.map1x_r, self.map1y_r = cv2.initUndistortRectifyMap(
-            self.K_raw_r,
-            self.dist_coeffs_r,
-            self.Rmat_r,
-            self.K_r,
-            (self.width, self.height),
-            cv2.CV_32FC1,
-        )
+        if self.distortion_model == 'radtan':
+            self.dist_coeffs = np.array(
+                [
+                    cam0raw["k1"],
+                    cam0raw["k2"],
+                    cam0raw["p1"],
+                    cam0raw["p2"],
+                    cam0raw["k3"],
+                ]
+            )
+            self.map1x, self.map1y = cv2.initUndistortRectifyMap(
+                self.K_raw,
+                self.dist_coeffs,
+                self.Rmat,
+                self.K,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
+
+            self.dist_coeffs_r = np.array(
+                [
+                    cam1raw["k1"],
+                    cam1raw["k2"],
+                    cam1raw["p1"],
+                    cam1raw["p2"],
+                    cam1raw["k3"],
+                ]
+            )
+            self.map1x_r, self.map1y_r = cv2.initUndistortRectifyMap(
+                self.K_raw_r,
+                self.dist_coeffs_r,
+                self.Rmat_r,
+                self.K_r,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
+        else:
+            self.dist_coeffs = np.array(
+                [
+                    cam0raw["k1"],
+                    cam0raw["k2"],
+                    cam0raw["k3"],
+                    cam0raw["k4"]
+                ]
+            )
+            self.map1x, self.map1y = cv2.fisheye.initUndistortRectifyMap(
+                self.K_raw,
+                self.dist_coeffs,
+                self.Rmat,
+                self.K,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
+
+            self.dist_coeffs_r = np.array(
+                [
+                    cam1raw["k1"],
+                    cam1raw["k2"],
+                    cam1raw["k3"],
+                    cam1raw["k4"]
+                ]
+            )
+            self.map1x_r, self.map1y_r = cv2.fisheye.initUndistortRectifyMap(
+                self.K_raw_r,
+                self.dist_coeffs_r,
+                self.Rmat_r,
+                self.K_r,
+                (self.width, self.height),
+                cv2.CV_32FC1,
+            )
 
     def __getitem__(self, idx):
         color_path = self.color_paths[idx]
@@ -398,6 +571,17 @@ class TUMDataset(MonocularDataset):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
         parser = TUMParser(dataset_path)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+        self.poses = parser.poses
+
+class RRXIODataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        use_thermal = config['Dataset']['modality'] == 'thermal'
+        parser = RRXIOParser(dataset_path, use_thermal=use_thermal)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
         self.depth_paths = parser.depth_paths
@@ -528,5 +712,7 @@ def load_dataset(args, path, config):
         return EurocDataset(args, path, config)
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
+    elif config["Dataset"]["type"] == "rrxio":
+        return RRXIODataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
