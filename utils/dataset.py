@@ -123,17 +123,17 @@ class TUMParser:
 
 
 class RRXIOParser:
-    def __init__(self, input_folder, use_thermal=False):
+    def __init__(self, input_folder, use_thermal, max_dt):
         self.input_folder = input_folder
         self.use_thermal = use_thermal
-        self.load_poses(self.input_folder, frame_rate=32)
+        self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
     def parse_list(self, filepath, skiprows=0):
         data = np.loadtxt(filepath, delimiter=" ", dtype=np.unicode_, skiprows=skiprows)
         return data
 
-    def associate_frames(self, tstamp_image, tstamp_depth, tstamp_pose, max_dt=0.03):
+    def associate_frames(self, tstamp_image, tstamp_depth, tstamp_pose, max_dt):
         associations = []
         for i, t in enumerate(tstamp_image):
             if tstamp_pose is None:
@@ -152,7 +152,7 @@ class RRXIOParser:
 
         return associations
 
-    def load_poses(self, datapath, frame_rate=-1):
+    def load_poses(self, datapath, max_dt, frame_rate=-1):
         if self.use_thermal:
             if os.path.isfile(os.path.join(self.input_folder, 'gt_thermal.txt')):
                 pose_list = os.path.join(self.input_folder, 'gt_thermal.txt')
@@ -172,7 +172,7 @@ class RRXIOParser:
         tstamp_image = image_data[:, 0].astype(np.float64)
         tstamp_depth = depth_data[:, 0].astype(np.float64)
         tstamp_pose = pose_data[:, 0].astype(np.float64)
-        associations = self.associate_frames(tstamp_image, tstamp_depth, tstamp_pose)
+        associations = self.associate_frames(tstamp_image, tstamp_depth, tstamp_pose, max_dt)
         print('Found {} associations out of {} images, {} depth images and {} poses'.format(
                 len(associations), len(tstamp_image), len(tstamp_depth), len(tstamp_pose)))
 
@@ -581,7 +581,7 @@ class RRXIODataset(MonocularDataset):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
         use_thermal = config['Dataset']['modality'] == 'thermal'
-        parser = RRXIOParser(dataset_path, use_thermal=use_thermal)
+        parser = RRXIOParser(dataset_path, use_thermal, 0.08)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
         self.depth_paths = parser.depth_paths

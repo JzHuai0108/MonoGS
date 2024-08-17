@@ -60,6 +60,9 @@ conda activate MonoGS
 # and https://stackoverflow.com/questions/61017279/how-to-specify-a-gcc-path-in-pip-command
 sudo apt install g++-10
 CXX=g++-10 CC=gcc-10 LD=g++-10 pip install submodules/simple-knn submodules/diff-gaussian-rasterization
+
+# To fix the "ValueError: Unable to determine Axes to steal space for Colorbar."
+pip install matplotlib==3.5.3
 ```
 Depending on your setup, please change the dependency version of pytorch/cudatoolkit in `environment.yml` by following [this document](https://pytorch.org/get-started/previous-versions/).
 
