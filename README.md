@@ -55,20 +55,19 @@ Setup the environment.
 ```
 conda env create -f environment.yml
 conda activate MonoGS
-
-# To build simple-knn and diff-gaussian-rasterization, see https://github.com/NVlabs/instant-ngp/issues/119
-# and https://stackoverflow.com/questions/61017279/how-to-specify-a-gcc-path-in-pip-command
-sudo apt install g++-10
-CXX=g++-10 CC=gcc-10 LD=g++-10 pip install submodules/simple-knn submodules/diff-gaussian-rasterization
-
-# To fix the "ValueError: Unable to determine Axes to steal space for Colorbar."
-pip install matplotlib==3.5.3
 ```
 Depending on your setup, please change the dependency version of pytorch/cudatoolkit in `environment.yml` by following [this document](https://pytorch.org/get-started/previous-versions/).
 
 Our test setup were:
 - Ubuntu 20.04: `pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.6`
 - Ubuntu 18.04: `pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3`
+
+## Installation on Ubuntu 22.04
+
+Follow [this](https://github.com/muskie82/MonoGS/issues/114#issuecomment-2244199923) to create a virtual env with 
+python=3.10.14, pytorch=2.4 and cuda toolkit 12.1 and nvcc 12.1.
+
+Then activate the virtual env, and `pip install -r requirements.txt`.
 
 ## Quick Demo
 ```

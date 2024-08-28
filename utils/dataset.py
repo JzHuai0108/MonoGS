@@ -293,8 +293,14 @@ class MonocularDataset(BaseDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         calibration = config["Dataset"]["Calibration"]
-        cam0raw = calibration["raw"]
-        cam0opt = calibration["opt"]
+        if 'raw' not in calibration:
+            cam0raw = calibration
+        else:
+            cam0raw = calibration["raw"]
+        if 'opt' not in calibration:
+            cam0opt = calibration
+        else:
+            cam0opt = calibration["opt"]
         # Camera prameters
         self.fx = cam0opt["fx"]
         self.fy = cam0opt["fy"]
