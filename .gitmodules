@@ -7,3 +7,6 @@
 [submodule "submodules/evaluate_3d_reconstruction_lib"]
 	path = submodules/evaluate_3d_reconstruction_lib
 	url = https://github.com/eriksandstroem/evaluate_3d_reconstruction_lib.git
+[submodule "submodules/diff-plane-rasterization"]
+	path = submodules/diff-plane-rasterization
+	url = git@github.com:JzHuai0108/diff-gaussian-rasterization.git
