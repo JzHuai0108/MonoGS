@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 
@@ -26,9 +27,8 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ## Plot
     traj_ref = PosePath3D(poses_se3=poses_gt)
     traj_est = PosePath3D(poses_se3=poses_est)
-    traj_est_aligned = trajectory.align_trajectory(
-        traj_est, traj_ref, correct_scale=monocular
-    )
+    traj_est_aligned = copy.deepcopy(traj_est)
+    traj_est_aligned.align(traj_ref, correct_scale=monocular)
 
     ## RMSE
     pose_relation = metrics.PoseRelation.translation_part
@@ -61,6 +61,7 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     )
     ax.legend()
     plt.savefig(os.path.join(plot_dir, "evo_2dplot_{}.png".format(str(label))), dpi=90)
+    plt.close(fig)
 
     return ape_stat
 

@@ -69,6 +69,22 @@ python=3.10.14, pytorch=2.4 and cuda toolkit 12.1 and nvcc 12.1.
 
 Then activate the virtual env, and `pip install -r requirements.txt`.
 
+### Error `QObject::moveToThread: Current thread (...) is not the object's thread (...)`.
+Cannot move to target thread (...)
+qt.qpa.plugin: Could not load the Qt platform plugin "xcb"
+
+The reason is that the opencv libs and PyQt5 libs conflict.
+Two solutions per [here](https://github.com/NVlabs/instant-ngp/discussions/300):
+1. If you want to keep opencv visualization functions, say imshow,
+```
+export QT_QPA_PLATFORM=offscreen # in the terminal to run slam.py
+```
+2. Otherwise, use headless opencv-python
+```
+pip uninstall opencv-python
+pip install opencv-python-headless
+```
+
 ## Quick Demo
 ```
 bash scripts/download_tum.sh

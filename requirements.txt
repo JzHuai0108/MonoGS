@@ -1,13 +1,14 @@
+# MonoGS requirements
 submodules/simple-knn
 submodules/diff-gaussian-rasterization
 munch
 ninja
-opencv-python-headless
+opencv-python
 opencv-contrib-python
 trimesh
-evo==1.11.0
+evo==1.19.1
 open3d==0.17.0
-matplotlib==3.5.3
+matplotlib
 plyfile
 torchmetrics
 imgviz
