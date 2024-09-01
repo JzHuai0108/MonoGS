@@ -20,4 +20,14 @@ wandb
 lpips
 rich
 ruff
-
+# DPVO additional requirements
+tensorboard
+numba
+einops
+pypose
+kornia
+torch-scatter
+yacs
+rosbags
+# FastMVSNet additional requirements
+tensorboardX
