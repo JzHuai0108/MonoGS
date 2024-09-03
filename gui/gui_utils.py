@@ -9,6 +9,7 @@ from gaussian_splatting.utils.general_utils import (
     build_scaling_rotation,
     strip_symmetric,
 )
+from utils.pose_utils import matrix_to_quaternion, quat_mult
 
 cv_gl = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 
@@ -126,6 +127,19 @@ class GaussianPacket:
             img.unsqueeze(0), size=(height, width), mode="bilinear", align_corners=False
         )
         return img.squeeze(0)
+
+    def get_xyz_transformed(self, T_w2c: torch.Tensor):
+        # Transform Centers of Gaussians to Camera Frame
+        pts_ones = torch.ones(self.get_xyz.shape[0], 1).cuda().float()
+        pts4 = torch.cat((self.get_xyz, pts_ones), dim=1)
+        transformed_pts = (T_w2c @ pts4.T).T[:, :3]
+        return transformed_pts
+
+    def get_rotation_transformed(self, R_w2c: torch.Tensor):
+        norm_rots = self.rotation_activation(self._rotation)
+        q_w2c = matrix_to_quaternion(R_w2c)
+        transformed_rots = quat_mult(q_w2c, norm_rots)
+        return transformed_rots
 
     def get_covariance(self, scaling_modifier=1):
         return self.build_covariance_from_scaling_rotation(

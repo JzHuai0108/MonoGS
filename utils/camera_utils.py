@@ -2,6 +2,7 @@ import torch
 from torch import nn
 
 from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
+from utils.pose_utils import SE3_exp, SO3_exp
 from utils.slam_utils import image_gradient, image_gradient_mask
 
 
@@ -93,6 +94,9 @@ class Camera(nn.Module):
 
     @property
     def world_view_transform(self):
+        """
+        return transposed world to camera transform.
+        """
         return getWorld2View2(self.R, self.T).transpose(0, 1)
 
     @property
@@ -106,6 +110,35 @@ class Camera(nn.Module):
     @property
     def camera_center(self):
         return self.world_view_transform.inverse()[3, :3]
+
+    def world_view_transform_updated(self):
+        """
+        return updated world to camera transform
+        """
+        tau = torch.cat([self.cam_trans_delta, self.cam_rot_delta], dim=0)
+        T_w2c = torch.eye(4, device=self.device)
+        T_w2c[0:3, 0:3] = self.R
+        T_w2c[0:3, 3] = self.T
+        new_w2c = SE3_exp(tau) @ T_w2c
+        return new_w2c
+
+    def world_view_rotation_updated(self):
+        """
+        return updated world to camera rotation
+        """
+        return SO3_exp(self.cam_rot_delta) @ self.R.to(dtype=torch.float32)
+
+    @property
+    def world_view_transform_camcentric(self):
+        return torch.eye(4, device=self.device)
+
+    @property
+    def camera_center_camcentric(self):
+        return torch.zeros(3, device=self.device)
+
+    @property
+    def full_proj_transform_camcentric(self):
+        return self.projection_matrix
 
     def update_RT(self, R, t):
         self.R = R.to(device=self.device)

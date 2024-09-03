@@ -29,6 +29,7 @@ from gaussian_splatting.utils.general_utils import (
 from gaussian_splatting.utils.graphics_utils import BasicPointCloud, getWorld2View2
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
+from utils.pose_utils import quat_mult, matrix_to_quaternion
 
 
 class GaussianModel:
@@ -94,6 +95,19 @@ class GaussianModel:
     @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
+
+    def get_xyz_transformed(self, T_w2c: torch.Tensor):
+        # Transform Centers of Gaussians to Camera Frame
+        pts_ones = torch.ones(self._xyz.shape[0], 1).cuda().float()
+        pts4 = torch.cat((self._xyz, pts_ones), dim=1)
+        transformed_pts = (T_w2c @ pts4.T).T[:, :3]
+        return transformed_pts
+
+    def get_rotation_transformed(self, R_w2c: torch.Tensor):
+        norm_rots = self.rotation_activation(self._rotation)
+        q_w2c = matrix_to_quaternion(R_w2c)
+        transformed_rots = quat_mult(q_w2c, norm_rots)
+        return transformed_rots
 
     def get_covariance(self, scaling_modifier=1):
         return self.covariance_activation(

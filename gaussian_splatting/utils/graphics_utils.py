@@ -93,6 +93,18 @@ def getProjectionMatrix2(znear, zfar, cx, cy, fx, fy, W, H):
     return P
 
 
+def getOpenGLProjectionMatrix(far, near, w, h, fx, fy, cx, cy):
+    """
+    Get the OpenGL projection matrix from the camera intrinsics.
+    return the transpose of the result of getProjectionMatrix2.
+    """
+    opengl_proj = torch.tensor([[2 * fx / w, 0.0, -(w - 2 * cx) / w, 0.0],
+                                [0.0, 2 * fy / h, -(h - 2 * cy) / h, 0.0],
+                                [0.0, 0.0, far / (far - near), -(far * near) / (far - near)],
+                                [0.0, 0.0, 1.0, 0.0]], device='cuda').float().transpose(0, 1)
+    return opengl_proj
+
+
 def fov2focal(fov, pixels):
     return pixels / (2 * math.tan(fov / 2))
 

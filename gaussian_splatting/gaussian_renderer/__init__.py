@@ -62,18 +62,20 @@ def render(
         tanfovy=tanfovy,
         bg=bg_color,
         scale_modifier=scaling_modifier,
-        viewmatrix=viewpoint_camera.world_view_transform,
-        projmatrix=viewpoint_camera.full_proj_transform,
+        viewmatrix=viewpoint_camera.world_view_transform_camcentric,
+        projmatrix=viewpoint_camera.full_proj_transform_camcentric,
         projmatrix_raw=viewpoint_camera.projection_matrix,
         sh_degree=pc.active_sh_degree,
-        campos=viewpoint_camera.camera_center,
+        campos=viewpoint_camera.camera_center_camcentric,
         prefiltered=False,
         debug=False,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    means3D = pc.get_xyz
+    updated_T_w2c = viewpoint_camera.world_view_transform_updated()
+    means3D = pc.get_xyz_transformed(updated_T_w2c)
+
     means2D = screenspace_points
     opacity = pc.get_opacity
 
@@ -86,11 +88,13 @@ def render(
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         # check if the covariance is isotropic
-        if pc.get_scaling.shape[-1] == 1:
+        if pc.get_scaling.shape[-1] == 1: # isotropic case does not need to rotate the covariance rotations.
             scales = pc.get_scaling.repeat(1, 3)
-        else:
+            rotations = pc.get_rotation
+        else: # anisotropic case needs to rotate the covariance rotations.
             scales = pc.get_scaling
-        rotations = pc.get_rotation
+            updated_R_w2c = viewpoint_camera.world_view_rotation_updated()
+            rotations = pc.get_rotation_transformed(updated_R_w2c)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
@@ -123,8 +127,8 @@ def render(
             scales=scales[mask],
             rotations=rotations[mask],
             cov3D_precomp=cov3D_precomp[mask] if cov3D_precomp is not None else None,
-            theta=viewpoint_camera.cam_rot_delta,
-            rho=viewpoint_camera.cam_trans_delta,
+            theta=None, # cut off the cuda gradient flow back to delta poses as we've already done this in pytorch.
+            rho=None,
         )
     else:
         rendered_image, radii, depth, opacity, n_touched = rasterizer(
@@ -136,8 +140,8 @@ def render(
             scales=scales,
             rotations=rotations,
             cov3D_precomp=cov3D_precomp,
-            theta=viewpoint_camera.cam_rot_delta,
-            rho=viewpoint_camera.cam_trans_delta,
+            theta=None, # cut off the cuda gradient flow back to delta poses as we've already done this in pytorch.
+            rho=None,
         )
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
