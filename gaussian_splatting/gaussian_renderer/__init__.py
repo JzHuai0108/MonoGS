@@ -73,8 +73,8 @@ def render(
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    updated_T_w2c = viewpoint_camera.world_view_transform_updated()
-    means3D = pc.get_xyz_transformed(updated_T_w2c)
+    updated_T_w2c_transposed = viewpoint_camera.world_view_transform_updated
+    means3D = pc.get_xyz_transformed(updated_T_w2c_transposed)
 
     means2D = screenspace_points
     opacity = pc.get_opacity
@@ -93,19 +93,19 @@ def render(
             rotations = pc.get_rotation
         else: # anisotropic case needs to rotate the covariance rotations.
             scales = pc.get_scaling
-            updated_R_w2c = viewpoint_camera.world_view_rotation_updated()
+            updated_R_w2c = viewpoint_camera.world_view_rotation_updated
             rotations = pc.get_rotation_transformed(updated_R_w2c)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
     colors_precomp = None
-    if colors_precomp is None:
+    if override_color is None:
         if pipe.convert_SHs_python:
             shs_view = pc.get_features.transpose(1, 2).view(
                 -1, 3, (pc.max_sh_degree + 1) ** 2
             )
-            dir_pp = pc.get_xyz - viewpoint_camera.camera_center.repeat(
+            dir_pp = pc.get_xyz - viewpoint_camera.camera_center_updated.repeat(
                 pc.get_features.shape[0], 1
             )
             dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)

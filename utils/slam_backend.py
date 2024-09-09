@@ -59,8 +59,8 @@ class BackEnd(mp.Process):
         self.size_threshold = self.config["Training"]["size_threshold"]
         self.window_size = self.config["Training"]["window_size"]
         self.single_thread = (
-            self.config["Dataset"]["single_thread"]
-            if "single_thread" in self.config["Dataset"]
+            self.config["Training"]["single_thread"]
+            if "single_thread" in self.config["Training"]
             else False
         )
 

@@ -128,11 +128,11 @@ class GaussianPacket:
         )
         return img.squeeze(0)
 
-    def get_xyz_transformed(self, T_w2c: torch.Tensor):
+    def get_xyz_transformed(self, T_w2c_transposed: torch.Tensor):
         # Transform Centers of Gaussians to Camera Frame
         pts_ones = torch.ones(self.get_xyz.shape[0], 1).cuda().float()
         pts4 = torch.cat((self.get_xyz, pts_ones), dim=1)
-        transformed_pts = (T_w2c @ pts4.T).T[:, :3]
+        transformed_pts = (pts4 @ T_w2c_transposed)[:, :3]
         return transformed_pts
 
     def get_rotation_transformed(self, R_w2c: torch.Tensor):
