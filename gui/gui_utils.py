@@ -113,6 +113,9 @@ class GaussianPacket:
         self.finish = finish
         self.kf_window = kf_window
 
+    def is_planar(self):
+        return self.get_scaling.shape[-1] == 2
+
     def resize_img(self, img, width):
         if img is None:
             return None
@@ -142,10 +145,14 @@ class GaussianPacket:
 
     def get_covariance(self, scaling_modifier=1):
         return self.build_covariance_from_scaling_rotation(
+            self.get_scaling, scaling_modifier, self._rotation)
+
+    def get_planar_covariance(self, scaling_modifier=1):
+        return self.build_planar_covariance_from_scaling_rotation(
             self.get_xyz, self.get_scaling, scaling_modifier, self._rotation
         )
 
-    def build_covariance_from_scaling_rotation(
+    def build_planar_covariance_from_scaling_rotation(
         self, center, scaling, scaling_modifier, rotation
     ):
         RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0, 2, 1)
@@ -155,6 +162,13 @@ class GaussianPacket:
         trans[:, 3, 3] = 1
         return trans
 
+    def build_covariance_from_scaling_rotation(
+        self, scaling, scaling_modifier, rotation
+    ):
+        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+        actual_covariance = L @ L.transpose(1, 2)
+        symm = strip_symmetric(actual_covariance)
+        return symm
 
 def get_latest_queue(q):
     message = None

@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import wandb
-from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.gaussian_renderer import render, planar_render
 from gaussian_splatting.utils.general_utils import build_rotation
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.loss_utils import ssim
@@ -139,6 +139,7 @@ def eval_rendering(
     cal_lpips = LearnedPerceptualImagePatchSimilarity(
         net_type="alex", normalize=True
     ).to("cuda")
+    my_render = planar_render if gaussians.is_planar() else render
     for idx in range(0, end_idx, interval):
         if idx in kf_indices:
             continue
@@ -146,7 +147,7 @@ def eval_rendering(
         frame = frames[idx]
         gt_image, _, _ = dataset[idx]
 
-        rendering = render(frame, gaussians, pipe, background)["render"]
+        rendering = my_render(frame, gaussians, pipe, background)["render"]
         image = torch.clamp(rendering, 0.0, 1.0)
 
         gt = (gt_image.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8)

@@ -54,19 +54,25 @@ class GaussianModel:
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
 
-        self.covariance_activation = self.build_covariance_from_scaling_rotation
-
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
 
         self.rotation_activation = torch.nn.functional.normalize
 
         self.config = config
+        if self.config["Training"]["planar_loss"]:
+            self.covariance_activation = self.build_planar_covariance_from_scaling_rotation
+        else:
+            self.covariance_activation = self.build_covariance_from_scaling_rotation
+
         self.ply_input = None
 
         self.isotropic = False
 
-    def build_covariance_from_scaling_rotation(
+    def is_planar(self):
+        return self.config["Training"]["planar_loss"]
+
+    def build_planar_covariance_from_scaling_rotation(
         self, center, scaling, scaling_modifier, rotation
     ):
         RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0, 2, 1)
@@ -75,6 +81,14 @@ class GaussianModel:
         trans[:, 3, :3] = center
         trans[:, 3, 3] = 1
         return trans
+
+    def build_covariance_from_scaling_rotation(
+        self, scaling, scaling_modifier, rotation
+    ):
+        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+        actual_covariance = L @ L.transpose(1, 2)
+        symm = strip_symmetric(actual_covariance)
+        return symm
 
     @property
     def get_scaling(self):
@@ -111,6 +125,9 @@ class GaussianModel:
         return transformed_rots
 
     def get_covariance(self, scaling_modifier=1):
+        return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
+
+    def get_planar_covariance(self, scaling_modifier=1):
         return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self._rotation)
 
     def oneupSHdegree(self):
@@ -202,7 +219,7 @@ class GaussianModel:
         )
         scales = torch.log(torch.sqrt(dist2))[..., None]
         if not self.isotropic:
-            scales = scales.repeat(1, 2)
+            scales = scales.repeat(1, 2 if self.config["Training"]["planar_loss"] else 3)
 
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
@@ -616,7 +633,8 @@ class GaussianModel:
         )
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
-        stds = torch.cat([stds, 0 * torch.ones_like(stds[:, :1])], dim=-1)
+        if self.config["Training"]["planar_loss"]:
+            stds = torch.cat([stds, 0 * torch.ones_like(stds[:, :1])], dim=-1)
         means = torch.zeros((stds.size(0), 3), device="cuda")
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)

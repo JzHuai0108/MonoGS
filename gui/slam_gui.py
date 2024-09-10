@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from OpenGL import GL as gl
 
-from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.gaussian_renderer import render, planar_render
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2, getWorld2View
 from gui.gl_render import util, util_gau
 from gui.gl_render.render_ogl import OpenGLRenderer
@@ -540,6 +540,7 @@ class SLAM_GUI:
         return current_cam
 
     def rasterise(self, current_cam):
+        my_render = planar_render if self.gaussian_cur.is_planar() else render
         if (
             self.time_shader_chbox.checked
             and self.gaussian_cur is not None
@@ -554,7 +555,7 @@ class SLAM_GUI:
             self.gaussian_cur.get_features = alpha * features + (
                 1 - alpha
             ) * torch.from_numpy(rgb_kf).to(features.device)
-            rendering_data = render(
+            rendering_data = my_render(
                 current_cam,
                 self.gaussian_cur,
                 self.pipe,
@@ -563,7 +564,7 @@ class SLAM_GUI:
             )
             self.gaussian_cur.get_features = features
         else:
-            rendering_data = render(
+            rendering_data = my_render(
                 current_cam,
                 self.gaussian_cur,
                 self.pipe,

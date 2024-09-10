@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 
-from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.gaussian_renderer import render, planar_render
 from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View
 from gui import gui_utils
 from utils.camera_utils import Camera
@@ -42,6 +42,7 @@ class FrontEnd(mp.Process):
         self.cameras = dict()
         self.device = "cuda:0"
         self.pause = False
+        self.render = planar_render if config["Training"]["planar_loss"] else render
 
     def set_hyperparams(self):
         self.save_dir = self.config["Results"]["save_dir"]
@@ -161,7 +162,7 @@ class FrontEnd(mp.Process):
 
         pose_optimizer = torch.optim.Adam(opt_params)
         for tracking_itr in range(self.tracking_itr_num):
-            render_pkg = render(
+            render_pkg = self.render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
             image, depth, opacity = (

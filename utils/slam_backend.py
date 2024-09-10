@@ -5,11 +5,11 @@ import torch
 import torch.multiprocessing as mp
 from tqdm import tqdm
 
-from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.gaussian_renderer import render, planar_render
 from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import clone_obj
-from utils.slam_utils import get_loss_mapping
+from utils.slam_utils import get_loss_mapping, get_planar_loss_mapping
 
 
 class BackEnd(mp.Process):
@@ -36,6 +36,7 @@ class BackEnd(mp.Process):
         self.current_window = []
         self.initialized = not self.monocular
         self.keyframe_optimizers = None
+        self.render = planar_render if config["Training"]["planar_loss"] else render
 
     def set_hyperparams(self):
         self.save_results = self.config["Results"]["save_results"]
@@ -85,7 +86,7 @@ class BackEnd(mp.Process):
     def initialize_map(self, cur_frame_idx, viewpoint):
         for mapping_iteration in range(self.init_itr_num):
             self.iteration_count += 1
-            render_pkg = render(
+            render_pkg = self.render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
             (
@@ -105,9 +106,14 @@ class BackEnd(mp.Process):
                 render_pkg["opacity"],
                 render_pkg["n_touched"],
             )
-            loss_init = get_loss_mapping(
-                self.config, image, depth, viewpoint, opacity, initialization=True
-            )
+            if self.config["Training"]["planar_loss"]:
+                loss_init = get_planar_loss_mapping(self.config, image, depth, render_pkg["rend_dist"],
+                                                    render_pkg["rend_normal"], render_pkg["surf_normal"], viewpoint,
+                                                    0.0, 0.0, initialization=True)
+            else:
+                loss_init = get_loss_mapping(
+                    self.config, image, depth, viewpoint, opacity, initialization=True
+                )
             loss_init.backward()
 
             with torch.no_grad():
@@ -167,7 +173,7 @@ class BackEnd(mp.Process):
             for cam_idx in range(len(current_window)):
                 viewpoint = viewpoint_stack[cam_idx]
                 keyframes_opt.append(viewpoint)
-                render_pkg = render(
+                render_pkg = self.render(
                     viewpoint, self.gaussians, self.pipeline_params, self.background
                 )
                 (
@@ -187,10 +193,15 @@ class BackEnd(mp.Process):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
-
-                loss_mapping += get_loss_mapping(
-                    self.config, image, depth, viewpoint, opacity
-                )
+                if self.config["Training"]["planar_loss"]:
+                    loss_mapping += get_planar_loss_mapping(self.config, image, depth, render_pkg["rend_dist"],
+                                                            render_pkg["rend_normal"], render_pkg["surf_normal"], viewpoint,
+                                                            self.config["Training"]["lambda_dist"],
+                                                            self.config["Training"]["lambda_normal"], initialization=False)
+                else:
+                    loss_mapping += get_loss_mapping(
+                        self.config, image, depth, viewpoint, opacity
+                    )
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
@@ -198,7 +209,7 @@ class BackEnd(mp.Process):
 
             for cam_idx in torch.randperm(len(random_viewpoint_stack))[:2]:
                 viewpoint = random_viewpoint_stack[cam_idx]
-                render_pkg = render(
+                render_pkg = self.render(
                     viewpoint, self.gaussians, self.pipeline_params, self.background
                 )
                 (
@@ -218,16 +229,23 @@ class BackEnd(mp.Process):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
-                loss_mapping += get_loss_mapping(
-                    self.config, image, depth, viewpoint, opacity
-                )
+                if self.config["Training"]["planar_loss"]:
+                    loss_mapping += get_planar_loss_mapping(self.config, image, depth, render_pkg["rend_dist"],
+                                                            render_pkg["rend_normal"], render_pkg["surf_normal"], viewpoint,
+                                                            self.config["Training"]["lambda_dist"],
+                                                            self.config["Training"]["lambda_normal"], initialization=False)
+                else:
+                    loss_mapping += get_loss_mapping(
+                        self.config, image, depth, viewpoint, opacity
+                    )
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
 
-            scaling = self.gaussians.get_scaling
+            scaling = self.gaussians.get_scaling # Nx3 or Nx2
             isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1))
             loss_mapping += 10 * isotropic_loss.mean()
+
             loss_mapping.backward()
             gaussian_split = False
             ## Deinsifying / Pruning Gaussians
@@ -320,7 +338,7 @@ class BackEnd(mp.Process):
                 random.randint(0, len(viewpoint_idx_stack) - 1)
             )
             viewpoint_cam = self.viewpoints[viewpoint_cam_idx]
-            render_pkg = render(
+            render_pkg = self.render(
                 viewpoint_cam, self.gaussians, self.pipeline_params, self.background
             )
             image, visibility_filter, radii = (
