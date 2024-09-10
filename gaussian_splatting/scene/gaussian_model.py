@@ -67,12 +67,14 @@ class GaussianModel:
         self.isotropic = False
 
     def build_covariance_from_scaling_rotation(
-        self, scaling, scaling_modifier, rotation
+        self, center, scaling, scaling_modifier, rotation
     ):
-        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-        actual_covariance = L @ L.transpose(1, 2)
-        symm = strip_symmetric(actual_covariance)
-        return symm
+        RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0, 2, 1)
+        trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
+        trans[:, :3, :3]= RS
+        trans[:, 3, :3] = center
+        trans[:, 3, 3] = 1
+        return trans
 
     @property
     def get_scaling(self):
@@ -110,9 +112,7 @@ class GaussianModel:
         return transformed_rots
 
     def get_covariance(self, scaling_modifier=1):
-        return self.covariance_activation(
-            self.get_scaling, scaling_modifier, self._rotation
-        )
+        return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self._rotation)
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
@@ -203,7 +203,7 @@ class GaussianModel:
         )
         scales = torch.log(torch.sqrt(dist2))[..., None]
         if not self.isotropic:
-            scales = scales.repeat(1, 3)
+            scales = scales.repeat(1, 2)
 
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
@@ -617,6 +617,7 @@ class GaussianModel:
         )
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
+        stds = torch.cat([stds, 0 * torch.ones_like(stds[:, :1])], dim=-1)
         means = torch.zeros((stds.size(0), 3), device="cuda")
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)

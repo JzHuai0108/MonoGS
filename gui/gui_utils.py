@@ -143,16 +143,18 @@ class GaussianPacket:
 
     def get_covariance(self, scaling_modifier=1):
         return self.build_covariance_from_scaling_rotation(
-            self.get_scaling, scaling_modifier, self._rotation
+            self.get_xyz, self.get_scaling, scaling_modifier, self._rotation
         )
 
     def build_covariance_from_scaling_rotation(
-        self, scaling, scaling_modifier, rotation
+        self, center, scaling, scaling_modifier, rotation
     ):
-        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-        actual_covariance = L @ L.transpose(1, 2)
-        symm = strip_symmetric(actual_covariance)
-        return symm
+        RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0, 2, 1)
+        trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
+        trans[:, :3, :3]= RS
+        trans[:, 3, :3] = center
+        trans[:, 3, 3] = 1
+        return trans
 
 
 def get_latest_queue(q):

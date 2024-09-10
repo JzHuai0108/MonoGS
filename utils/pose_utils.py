@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy.spatial.transform import Rotation
+
 
 def rt2mat(R, T):
     mat = np.eye(4)
@@ -159,6 +161,32 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
     return quat_candidates[
         F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
     ].reshape(batch_dim + (4,))
+
+
+def np2torch(array: np.ndarray, device: str = "cpu") -> torch.Tensor:
+    """Converts a NumPy ndarray to a PyTorch tensor.
+    Args:
+        array: The NumPy ndarray to convert.
+        device: The device to which the tensor is sent. Defaults to 'cpu'.
+
+    Returns:
+        A PyTorch tensor with the same data as the input array.
+    """
+    return torch.from_numpy(array).float().to(device)
+
+
+def matrix_to_quaternion2(mat):
+    """
+    Convert a rotation matrix to a quaternion.
+    This has the same result as matrix_to_quaternion
+    Args:
+        mat: Rotation matrix as tensor of shape (..., 3, 3).
+    Returns:
+        quaternions with real part first, as tensor of shape (..., 4).
+    """
+    quaternion = Rotation.from_matrix(mat).as_quat(canonical=True)
+    quaternion = quaternion[[3, 0, 1, 2]]
+    return np2torch(quaternion, device=mat.device)
 
 
 def update_pose(camera, converged_threshold=1e-4):
