@@ -76,11 +76,16 @@ def SE3_exp(tau):
 
 
 def quat_mult(q1, q2):
-    if q1.dim() == 1:
-        w1, x1, y1, z1 = q1
-    else:
-        w1, x1, y1, z1 = q1.mT
-    w2, x2, y2, z2 = q2.mT
+    """
+    Multiply two quaternions.
+    Args:
+        q1: A tensor of shape (..., 4) representing the first quaternion.
+        q2: A tensor of shape (..., 4) representing the second quaternion.
+    Returns:
+        q1 * q2 A tensor of shape (..., 4) representing the product of the two quaternions.
+    """
+    w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+    w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
     w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
     x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
     y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
@@ -189,21 +194,8 @@ def matrix_to_quaternion2(mat):
     return np2torch(quaternion, device=mat.device)
 
 
-def update_pose(camera, converged_threshold=1e-4):
-    tau = torch.cat([camera.cam_trans_delta, camera.cam_rot_delta], axis=0)
-
-    T_w2c = torch.eye(4, device=tau.device)
-    T_w2c[0:3, 0:3] = camera.R
-    T_w2c[0:3, 3] = camera.T
-
-    new_w2c = SE3_exp(tau) @ T_w2c
-
-    new_R = new_w2c[0:3, 0:3]
-    new_T = new_w2c[0:3, 3]
-
+def is_pose_converged(camera, prev_unnorm_q_cw, prev_p_cw, converged_threshold=1e-4):
+    tau = camera.unnorm_q_cw - prev_unnorm_q_cw
+    rho = camera.p_cw - prev_p_cw
     converged = tau.norm() < converged_threshold
-    camera.update_RT(new_R, new_T)
-
-    camera.cam_rot_delta.data.fill_(0)
-    camera.cam_trans_delta.data.fill_(0)
     return converged

@@ -5,13 +5,13 @@ import torch
 import torch.multiprocessing as mp
 
 from gaussian_splatting.gaussian_renderer import render
-from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
+from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View
 from gui import gui_utils
 from utils.camera_utils import Camera
 from utils.eval_utils import eval_ate, save_gaussians
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import clone_obj
-from utils.pose_utils import update_pose
+from utils.pose_utils import is_pose_converged
 from utils.slam_utils import get_loss_tracking, get_median_depth
 
 
@@ -118,7 +118,7 @@ class FrontEnd(mp.Process):
             self.backend_queue.get()
 
         # Initialise the frame at the ground truth pose
-        viewpoint.update_RT(viewpoint.R_gt, viewpoint.T_gt)
+        viewpoint.update_RT2(viewpoint.R_gt, viewpoint.T_gt)
 
         self.kf_indices = []
         depth_map = self.add_new_keyframe(cur_frame_idx, init=True)
@@ -127,19 +127,19 @@ class FrontEnd(mp.Process):
 
     def tracking(self, cur_frame_idx, viewpoint):
         prev = self.cameras[cur_frame_idx - self.use_every_n_frames]
-        viewpoint.update_RT(prev.R, prev.T)
+        viewpoint.update_RT(prev.unnorm_q_cw.clone().detach(), prev.p_cw.clone().detach())
 
         opt_params = []
         opt_params.append(
             {
-                "params": [viewpoint.cam_rot_delta],
+                "params": [viewpoint.unnorm_q_cw],
                 "lr": self.config["Training"]["lr"]["cam_rot_delta"],
                 "name": "rot_{}".format(viewpoint.uid),
             }
         )
         opt_params.append(
             {
-                "params": [viewpoint.cam_trans_delta],
+                "params": [viewpoint.p_cw],
                 "lr": self.config["Training"]["lr"]["cam_trans_delta"],
                 "name": "trans_{}".format(viewpoint.uid),
             }
@@ -176,8 +176,10 @@ class FrontEnd(mp.Process):
             loss_tracking.backward()
 
             with torch.no_grad():
+                prev_unnorm_q_cw = viewpoint.unnorm_q_cw.clone()
+                prev_p_cw = viewpoint.p_cw.clone()
                 pose_optimizer.step()
-                converged = update_pose(viewpoint)
+                converged = is_pose_converged(viewpoint, prev_unnorm_q_cw, prev_p_cw)
 
             if tracking_itr % 10 == 0:
                 self.q_main2vis.put(
@@ -208,8 +210,8 @@ class FrontEnd(mp.Process):
 
         curr_frame = self.cameras[cur_frame_idx]
         last_kf = self.cameras[last_keyframe_idx]
-        pose_CW = getWorld2View2(curr_frame.R, curr_frame.T)
-        last_kf_CW = getWorld2View2(last_kf.R, last_kf.T)
+        pose_CW = getWorld2View(curr_frame.unnorm_q_cw.clone().detach(), curr_frame.p_cw.clone().detach())
+        last_kf_CW = getWorld2View(last_kf.unnorm_q_cw.clone().detach(), last_kf.p_cw.clone().detach())
         last_kf_WC = torch.linalg.inv(last_kf_CW)
         dist = torch.norm((pose_CW @ last_kf_WC)[0:3, 3])
         dist_check = dist > kf_translation * self.median_depth
@@ -257,7 +259,7 @@ class FrontEnd(mp.Process):
         if to_remove:
             window.remove(to_remove[-1])
             removed_frame = to_remove[-1]
-        kf_0_WC = torch.linalg.inv(getWorld2View2(curr_frame.R, curr_frame.T))
+        kf_0_WC = torch.linalg.inv(getWorld2View(curr_frame.unnorm_q_cw.clone().detach(), curr_frame.p_cw.clone().detach()))
 
         if len(window) > self.config["Training"]["window_size"]:
             # we need to find the keyframe to remove...
@@ -266,13 +268,13 @@ class FrontEnd(mp.Process):
                 inv_dists = []
                 kf_i_idx = window[i]
                 kf_i = self.cameras[kf_i_idx]
-                kf_i_CW = getWorld2View2(kf_i.R, kf_i.T)
+                kf_i_CW = getWorld2View(kf_i.unnorm_q_cw.clone().detach(), kf_i.p_cw.clone().detach())
                 for j in range(N_dont_touch, len(window)):
                     if i == j:
                         continue
                     kf_j_idx = window[j]
                     kf_j = self.cameras[kf_j_idx]
-                    kf_j_WC = torch.linalg.inv(getWorld2View2(kf_j.R, kf_j.T))
+                    kf_j_WC = torch.linalg.inv(getWorld2View(kf_j.unnorm_q_cw.clone().detach(), kf_j.p_cw.clone().detach()))
                     T_CiCj = kf_i_CW @ kf_j_WC
                     inv_dists.append(1.0 / (torch.norm(T_CiCj[0:3, 3]) + 1e-6).item())
                 T_CiC0 = kf_i_CW @ kf_0_WC

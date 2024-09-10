@@ -6,6 +6,7 @@ import cv2
 import evo
 import numpy as np
 import torch
+import torch.nn.functional as F
 from evo.core import metrics, trajectory
 from evo.core.metrics import PoseRelation, Unit
 from evo.core.trajectory import PosePath3D, PoseTrajectory3D
@@ -17,6 +18,7 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import wandb
 from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.utils.general_utils import build_rotation
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.loss_utils import ssim
 from gaussian_splatting.utils.system_utils import mkdir_p
@@ -78,9 +80,15 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
         pose[0:3, 3] = T.cpu().numpy()
         return pose
 
+    def gen_pose_matrix2(q, p):
+        pose = np.eye(4)
+        pose[0:3, 0:3] = build_rotation(F.normalize(q, p=2, dim=-1).unsqueeze(0)).squeeze().cpu().numpy()
+        pose[0:3, 3] = p.cpu().numpy()
+        return pose
+
     for kf_id in kf_ids:
         kf = frames[kf_id]
-        pose_est = np.linalg.inv(gen_pose_matrix(kf.R, kf.T))
+        pose_est = np.linalg.inv(gen_pose_matrix2(kf.unnorm_q_cw.clone().detach(), kf.p_cw.clone().detach()))
         pose_gt = np.linalg.inv(gen_pose_matrix(kf.R_gt, kf.T_gt))
 
         trj_id.append(frames[kf_id].uid)

@@ -12,6 +12,7 @@
 import math
 
 import torch
+import torch.nn.functional as F
 from diff_surfel_rasterization import (
     GaussianRasterizationSettings,
     GaussianRasterizer,
@@ -102,8 +103,8 @@ def render(
             rotations = pc.get_rotation
         else: # anisotropic case needs to rotate the covariance rotations.
             scales = pc.get_scaling
-            updated_R_w2c = viewpoint_camera.world_view_rotation_updated
-            rotations = pc.get_rotation_transformed(updated_R_w2c)
+            q_w2c = F.normalize(viewpoint_camera.unnorm_q_cw, p=2, dim=-1)
+            rotations = pc.get_rotation_transformed(q_w2c)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.

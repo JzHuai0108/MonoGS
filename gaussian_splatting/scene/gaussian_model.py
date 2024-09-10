@@ -26,10 +26,10 @@ from gaussian_splatting.utils.general_utils import (
     inverse_sigmoid,
     strip_symmetric,
 )
-from gaussian_splatting.utils.graphics_utils import BasicPointCloud, getWorld2View2
+from gaussian_splatting.utils.graphics_utils import BasicPointCloud, getWorld2View2, getWorld2View
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
-from utils.pose_utils import quat_mult, matrix_to_quaternion
+from utils.pose_utils import quat_mult
 
 
 class GaussianModel:
@@ -105,9 +105,8 @@ class GaussianModel:
         transformed_pts = (pts4 @ T_w2c_transposed)[:, :3]
         return transformed_pts
 
-    def get_rotation_transformed(self, R_w2c: torch.Tensor):
+    def get_rotation_transformed(self, q_w2c: torch.Tensor):
         norm_rots = self.rotation_activation(self._rotation)
-        q_w2c = matrix_to_quaternion(R_w2c)
         transformed_rots = quat_mult(q_w2c, norm_rots)
         return transformed_rots
 
@@ -161,7 +160,7 @@ class GaussianModel:
             convert_rgb_to_intensity=False,
         )
 
-        W2C = getWorld2View2(cam.R, cam.T).cpu().numpy()
+        T_CW = getWorld2View(cam.unnorm_q_cw.clone().detach(), cam.p_cw.clone().detach()).cpu().numpy()
         pcd_tmp = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd,
             o3d.camera.PinholeCameraIntrinsic(
@@ -172,7 +171,7 @@ class GaussianModel:
                 cam.cx,
                 cam.cy,
             ),
-            extrinsic=W2C,
+            extrinsic=T_CW,
             project_valid_depth_only=True,
         )
         pcd_tmp = pcd_tmp.random_down_sample(1.0 / downsample_factor)

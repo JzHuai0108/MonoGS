@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from OpenGL import GL as gl
 
 from gaussian_splatting.gaussian_renderer import render
-from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
+from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2, getWorld2View
 from gui.gl_render import util, util_gau
 from gui.gl_render.render_ogl import OpenGLRenderer
 from gui.gui_utils import (
@@ -27,6 +27,7 @@ from gui.gui_utils import (
 )
 from utils.camera_utils import Camera
 from utils.logging_utils import Log
+from utils.pose_utils import matrix_to_quaternion
 
 o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -253,7 +254,7 @@ class SLAM_GUI:
         W2C = (
             getWorld2View2(camera.R_gt, camera.T_gt)
             if gt
-            else getWorld2View2(camera.R, camera.T)
+            else getWorld2View(camera.unnorm_q_cw.clone().detach(), camera.p_cw.clone().detach())
         )
         W2C = W2C.cpu().numpy()
         C2W = np.linalg.inv(W2C)
@@ -534,7 +535,8 @@ class SLAM_GUI:
             H=image_gui.shape[1],
             W=image_gui.shape[2],
         )
-        current_cam.update_RT(T[0:3, 0:3], T[0:3, 3])
+        q_cw = matrix_to_quaternion(T[:3, :3])
+        current_cam.update_RT(q_cw, T[0:3, 3])
         return current_cam
 
     def rasterise(self, current_cam):

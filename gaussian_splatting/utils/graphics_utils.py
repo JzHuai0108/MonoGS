@@ -14,20 +14,14 @@ from typing import NamedTuple
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+from gaussian_splatting.utils.general_utils import build_rotation
 
 
 class BasicPointCloud(NamedTuple):
     points: np.array
     colors: np.array
     normals: np.array
-
-
-def getWorld2View(R, t):
-    Rt = np.zeros((4, 4))
-    Rt[:3, :3] = R.transpose()
-    Rt[:3, 3] = t
-    Rt[3, 3] = 1.0
-    return np.float32(Rt)
 
 
 def getWorld2View2(R, t, translate=torch.tensor([0.0, 0.0, 0.0]), scale=1.0):
@@ -44,6 +38,14 @@ def getWorld2View2(R, t, translate=torch.tensor([0.0, 0.0, 0.0]), scale=1.0):
     C2W[:3, 3] = cam_center
     Rt = torch.linalg.inv(C2W)
     return Rt
+
+
+def getWorld2View(unnorm_q_cw, p_cw):
+    T_w2c = torch.eye(4)
+    q_w2c = F.normalize(unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+    T_w2c[0:3, 0:3] = build_rotation(q_w2c)
+    T_w2c[0:3, 3] = p_cw
+    return T_w2c
 
 
 def getProjectionMatrix(znear, zfar, fovX, fovY):

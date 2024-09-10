@@ -1,8 +1,10 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
-from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
-from utils.pose_utils import SE3_exp, SO3_exp, V
+from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2
+from gaussian_splatting.utils.general_utils import build_rotation
+from utils.pose_utils import matrix_to_quaternion
 from utils.slam_utils import image_gradient, image_gradient_mask
 
 
@@ -28,9 +30,6 @@ class Camera(nn.Module):
         self.uid = uid
         self.device = device
 
-        T = torch.eye(4, device=device)
-        self.R = T[:3, :3] # world to cam
-        self.T = T[:3, 3] # world in cam
         self.R_gt = gt_T[:3, :3]
         self.T_gt = gt_T[:3, 3]
 
@@ -47,12 +46,15 @@ class Camera(nn.Module):
         self.image_height = image_height
         self.image_width = image_width
 
-        self.cam_rot_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
-        self.cam_trans_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
+        self.unnorm_q_cw = nn.Parameter(
+            torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float, requires_grad=True, device=device))
+        self.p_cw = nn.Parameter(
+            torch.tensor([0.0, 0.0, 0.0], dtype=torch.float, requires_grad=True, device=device))
+
+        if uid == 0:
+            self.unnorm_q_cw.requires_grad = False
+            self.p_cw.requires_grad = False
+            print("Freezing pose of camera at uid 0")
 
         self.exposure_a = nn.Parameter(
             torch.tensor([0.0], requires_grad=True, device=device)
@@ -93,21 +95,6 @@ class Camera(nn.Module):
         )
 
     @property
-    def world_view_transform(self):
-        """
-        return transposed world to camera transform.
-        """
-        return getWorld2View2(self.R, self.T).transpose(0, 1)
-
-    @property
-    def full_proj_transform(self):
-        return (
-            self.world_view_transform.unsqueeze(0).bmm(
-                self.projection_matrix.unsqueeze(0)
-            )
-        ).squeeze(0)
-
-    @property
     def full_proj_transform_updated(self):
         return (
             self.world_view_transform_updated.unsqueeze(0).bmm(
@@ -116,37 +103,34 @@ class Camera(nn.Module):
         ).squeeze(0)
 
     @property
-    def camera_center(self):
-        return self.world_view_transform.inverse()[3, :3]
-
-    @property
     def world_view_transform_updated(self):
         """
-        return updated transposed world to camera transform
+        return transposed world to camera transform
         """
-        tau = torch.cat([self.cam_trans_delta, self.cam_rot_delta], dim=0)
-        T_w2c = torch.eye(4, device=self.device)
-        T_w2c[0:3, 0:3] = self.R
-        T_w2c[0:3, 3] = self.T
-        new_w2c = SE3_exp(tau) @ T_w2c
-        return new_w2c.transpose(0, 1)
+        T_w2c = torch.eye(4, device=self.device).float()
+        q_w2c = F.normalize(self.unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+        T_w2c[0:3, 0:3] = build_rotation(q_w2c)
+        T_w2c[0:3, 3] = self.p_cw
+        return T_w2c.transpose(-2, -1)
 
     @property
     def world_view_rotation_updated(self):
         """
         return updated world to camera rotation
         """
-        return SO3_exp(self.cam_rot_delta) @ self.R.to(dtype=torch.float32)
-
-    @property
-    def camera_center_updated_slow(self):
-        return self.world_view_transform_updated.inverse()[3, :3]
+        q_w2c = F.normalize(self.unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+        return build_rotation(q_w2c)
 
     @property
     def camera_center_updated(self):
-        dR = SO3_exp(-self.cam_rot_delta)
-        cam_center = self.R.transpose(-2, -1) @ (-self.T - dR @ V(self.cam_rot_delta) @ self.cam_trans_delta)
+        T_cw_transposed = self.world_view_transform_updated
+        cam_center = (-T_cw_transposed[3, :3]) @ T_cw_transposed[:3, :3].transpose(-2, -1)
         return cam_center.squeeze()
+
+    @property
+    def camera_center_updated2(self):
+        T_cw_transposed = self.world_view_transform_updated
+        return T_cw_transposed.inverse()[3, :3]
 
     @property
     def world_view_transform_camcentric(self):
@@ -160,9 +144,14 @@ class Camera(nn.Module):
     def full_proj_transform_camcentric(self):
         return self.projection_matrix
 
-    def update_RT(self, R, t):
-        self.R = R.to(device=self.device)
-        self.T = t.to(device=self.device)
+    def update_RT(self, q, t):
+        norm_q = F.normalize(q, p=2, dim=-1)
+        self.unnorm_q_cw.data = norm_q.float().to(device=self.device)
+        self.p_cw.data = t.float().to(device=self.device)
+
+    def update_RT2(self, R, t):
+        self.unnorm_q_cw.data = matrix_to_quaternion(R).float().to(device=self.device)
+        self.p_cw.data = t.float().to(device=self.device)
 
     def compute_grad_mask(self, config):
         edge_threshold = config["Training"]["edge_threshold"]
@@ -199,9 +188,6 @@ class Camera(nn.Module):
         self.original_image = None
         self.depth = None
         self.grad_mask = None
-
-        self.cam_rot_delta = None
-        self.cam_trans_delta = None
 
         self.exposure_a = None
         self.exposure_b = None

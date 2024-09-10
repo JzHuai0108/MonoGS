@@ -9,7 +9,6 @@ from gaussian_splatting.gaussian_renderer import render
 from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import clone_obj
-from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_mapping
 
 
@@ -309,12 +308,6 @@ class BackEnd(mp.Process):
                 self.gaussians.update_learning_rate(self.iteration_count)
                 self.keyframe_optimizers.step()
                 self.keyframe_optimizers.zero_grad(set_to_none=True)
-                # Pose update
-                for cam_idx in range(min(frames_to_optimize, len(current_window))):
-                    viewpoint = viewpoint_stack[cam_idx]
-                    if viewpoint.uid == 0:
-                        continue
-                    update_pose(viewpoint)
         return gaussian_split
 
     def color_refinement(self):
@@ -357,7 +350,7 @@ class BackEnd(mp.Process):
         keyframes = []
         for kf_idx in self.current_window:
             kf = self.viewpoints[kf_idx]
-            keyframes.append((kf_idx, kf.R.clone(), kf.T.clone()))
+            keyframes.append((kf_idx, kf.unnorm_q_cw.clone().detach(), kf.p_cw.clone().detach()))
         if tag is None:
             tag = "sync_backend"
 
@@ -438,7 +431,7 @@ class BackEnd(mp.Process):
                         if cam_idx < frames_to_optimize:
                             opt_params.append(
                                 {
-                                    "params": [viewpoint.cam_rot_delta],
+                                    "params": [viewpoint.unnorm_q_cw],
                                     "lr": self.config["Training"]["lr"]["cam_rot_delta"]
                                     * 0.5,
                                     "name": "rot_{}".format(viewpoint.uid),
@@ -446,7 +439,7 @@ class BackEnd(mp.Process):
                             )
                             opt_params.append(
                                 {
-                                    "params": [viewpoint.cam_trans_delta],
+                                    "params": [viewpoint.p_cw],
                                     "lr": self.config["Training"]["lr"][
                                         "cam_trans_delta"
                                     ]

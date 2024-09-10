@@ -9,7 +9,7 @@ from gaussian_splatting.utils.general_utils import (
     build_scaling_rotation,
     strip_symmetric,
 )
-from utils.pose_utils import matrix_to_quaternion, quat_mult
+from utils.pose_utils import quat_mult
 
 cv_gl = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 
@@ -135,9 +135,8 @@ class GaussianPacket:
         transformed_pts = (pts4 @ T_w2c_transposed)[:, :3]
         return transformed_pts
 
-    def get_rotation_transformed(self, R_w2c: torch.Tensor):
+    def get_rotation_transformed(self, q_w2c: torch.Tensor):
         norm_rots = self.rotation_activation(self._rotation)
-        q_w2c = matrix_to_quaternion(R_w2c)
         transformed_rots = quat_mult(q_w2c, norm_rots)
         return transformed_rots
 
