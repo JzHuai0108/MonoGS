@@ -103,6 +103,13 @@ class Camera(nn.Module):
         ).squeeze(0)
 
     @property
+    def world_view_transform(self):
+        """
+        return transposed world to camera transform
+        """
+        return self.world_view_transform_updated
+
+    @property
     def world_view_transform_updated(self):
         """
         return transposed world to camera transform

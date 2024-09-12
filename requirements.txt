@@ -36,7 +36,7 @@ tyro
 jaxtyping
 comet-ml
 newrawpy
-viser
+viser==0.1.17
 nuscenes-devkit
 nerfacc
 splines
