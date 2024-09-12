@@ -392,6 +392,10 @@ class BackEnd(mp.Process):
                 elif data[0] == "color_refinement":
                     self.color_refinement()
                     self.push_to_frontend()
+                elif data[0] == "refinement":
+                    self.map(self.current_window, iters=10)
+                    self.map(self.current_window, prune=True, iters=10)
+                    self.push_to_frontend()
                 elif data[0] == "init":
                     cur_frame_idx = data[1]
                     viewpoint = data[2]
