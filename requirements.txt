@@ -29,5 +29,21 @@ kornia
 torch-scatter
 yacs
 rosbags
-# FastMVSNet additional requirements
-tensorboardX
+
+# nerf-vo requirements
+appdirs
+tyro
+jaxtyping
+comet-ml
+newrawpy
+viser
+nuscenes-devkit
+nerfacc
+splines
+mediapy
+pymeshlab
+timm
+
+# omnidata requirements
+h5py
+pytorch_lightning
