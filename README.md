@@ -45,7 +45,47 @@ The method demonstrates the first monocular SLAM solely based on 3D Gaussian Spl
 - **[New]** Speed-up version of our code is available in `dev.speedup` branch, It achieves up to 10fps on monocular fr3/office sequence while keeping consistent performance (tested on RTX4090/i9-12900K). The code will be merged into the main branch after further refactoring and testing.
 
 # Getting Started
-## Installation
+
+## Installation (custom approach)
+Tested on Ubuntu 22.04.
+
+### 1. Clone repo
+```
+git clone https://github.com/muskie82/MonoGS.git --recursive
+cd MonoGS
+git checkout baseline # or main
+```
+
+### 2. Create venv
+
+Follow [this](https://github.com/muskie82/MonoGS/issues/114#issuecomment-2244199923) to create a virtual env with 
+python=3.10.14, pytorch=2.4 and cuda toolkit 12.1 and nvcc 12.1.
+
+### 3. Pip dependencies
+
+Then activate the virtual env, 
+
+```
+pip install -r requirements.txt
+```
+
+### Runtime Error `QObject::moveToThread: Current thread (...) is not the object's thread (...)`.
+Cannot move to target thread (...)
+qt.qpa.plugin: Could not load the Qt platform plugin "xcb"
+
+The reason is that the opencv libs and PyQt5 libs conflict.
+Two solutions per [here](https://github.com/NVlabs/instant-ngp/discussions/300):
+1. If you want to keep opencv visualization functions, say imshow,
+```
+export QT_QPA_PLATFORM=offscreen # in the terminal to run slam.py
+```
+2. Otherwise, use headless opencv-python
+```
+pip uninstall opencv-python
+pip install opencv-python-headless
+```
+
+## Installation (official approach)
 ```
 git clone https://github.com/muskie82/MonoGS.git --recursive
 cd MonoGS
@@ -61,29 +101,6 @@ Depending on your setup, please change the dependency version of pytorch/cudatoo
 Our test setup were:
 - Ubuntu 20.04: `pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.6`
 - Ubuntu 18.04: `pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3`
-
-## Installation on Ubuntu 22.04
-
-Follow [this](https://github.com/muskie82/MonoGS/issues/114#issuecomment-2244199923) to create a virtual env with 
-python=3.10.14, pytorch=2.4 and cuda toolkit 12.1 and nvcc 12.1.
-
-Then activate the virtual env, and `pip install -r requirements.txt`.
-
-### Error `QObject::moveToThread: Current thread (...) is not the object's thread (...)`.
-Cannot move to target thread (...)
-qt.qpa.plugin: Could not load the Qt platform plugin "xcb"
-
-The reason is that the opencv libs and PyQt5 libs conflict.
-Two solutions per [here](https://github.com/NVlabs/instant-ngp/discussions/300):
-1. If you want to keep opencv visualization functions, say imshow,
-```
-export QT_QPA_PLATFORM=offscreen # in the terminal to run slam.py
-```
-2. Otherwise, use headless opencv-python
-```
-pip uninstall opencv-python
-pip install opencv-python-headless
-```
 
 ## Quick Demo
 ```

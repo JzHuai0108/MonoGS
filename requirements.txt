@@ -1,6 +1,8 @@
 # MonoGS requirements
 submodules/simple-knn
 submodules/diff-gaussian-rasterization
+submodules/diff-surfel-rasterization
+# submodules/evaluate_3d_reconstruction
 munch
 ninja
 opencv-python
