@@ -98,8 +98,7 @@ def render(
             rotations = pc.get_rotation
         else:
             scales = pc.get_scaling
-            q_w2c = F.normalize(viewpoint_camera.unnorm_q_cw, p=2, dim=-1)
-            rotations = pc.get_rotation_transformed(q_w2c)
+            rotations = pc.get_rotation_transformed(viewpoint_camera.q_cw)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
@@ -241,7 +240,7 @@ def planar_render(
             rotations = pc.get_rotation
         else: # anisotropic case needs to rotate the covariance rotations.
             scales = pc.get_scaling
-            q_w2c = F.normalize(viewpoint_camera.unnorm_q_cw, p=2, dim=-1)
+            q_w2c = viewpoint_camera.q_cw
             rotations = pc.get_rotation_transformed(q_w2c)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors

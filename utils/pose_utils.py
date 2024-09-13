@@ -194,8 +194,8 @@ def matrix_to_quaternion2(mat):
     return np2torch(quaternion, device=mat.device)
 
 
-def is_pose_converged(camera, prev_unnorm_q_cw, prev_p_cw, converged_threshold=1e-4):
-    tau = camera.unnorm_q_cw - prev_unnorm_q_cw
+def is_pose_converged(camera, prev_q_cw, prev_p_cw, converged_threshold=1e-4):
+    tau = camera.q_cw - prev_q_cw
     rho = camera.p_cw - prev_p_cw
     converged = tau.norm() < converged_threshold
     return converged

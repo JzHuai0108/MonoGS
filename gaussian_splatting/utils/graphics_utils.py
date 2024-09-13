@@ -40,9 +40,9 @@ def getWorld2View2(R, t, translate=torch.tensor([0.0, 0.0, 0.0]), scale=1.0):
     return Rt
 
 
-def getWorld2View(unnorm_q_cw, p_cw):
+def getWorld2View(q_cw, p_cw):
     T_w2c = torch.eye(4)
-    q_w2c = F.normalize(unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+    q_w2c = q_cw.unsqueeze(0)
     T_w2c[0:3, 0:3] = build_rotation(q_w2c)
     T_w2c[0:3, 3] = p_cw
     return T_w2c

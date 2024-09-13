@@ -138,6 +138,7 @@ class BackEnd(mp.Process):
                     self.gaussians.reset_opacity()
 
                 self.gaussians.optimizer.step()
+                self.gaussians.normalize_rotations()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
 
         self.occ_aware_visibility[cur_frame_idx] = (n_touched > 0).long()
@@ -322,9 +323,14 @@ class BackEnd(mp.Process):
                     gaussian_split = True
 
                 self.gaussians.optimizer.step()
+                self.gaussians.normalize_rotations()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
                 self.gaussians.update_learning_rate(self.iteration_count)
                 self.keyframe_optimizers.step()
+                for param_group in self.keyframe_optimizers.param_groups:
+                    if 'name' in param_group and param_group['name'].startswith("rot_"):
+                        param_group['params'][0].data = param_group['params'][0].data / torch.norm(param_group['params'][0].data)
+
                 self.keyframe_optimizers.zero_grad(set_to_none=True)
         return gaussian_split
 
@@ -359,6 +365,7 @@ class BackEnd(mp.Process):
                     radii[visibility_filter],
                 )
                 self.gaussians.optimizer.step()
+                self.gaussians.normalize_rotations()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
                 self.gaussians.update_learning_rate(iteration)
         Log("Map refinement done")
@@ -368,7 +375,7 @@ class BackEnd(mp.Process):
         keyframes = []
         for kf_idx in self.current_window:
             kf = self.viewpoints[kf_idx]
-            keyframes.append((kf_idx, kf.unnorm_q_cw.clone().detach(), kf.p_cw.clone().detach()))
+            keyframes.append((kf_idx, kf.q_cw.clone().detach(), kf.p_cw.clone().detach()))
         if tag is None:
             tag = "sync_backend"
 
@@ -402,6 +409,10 @@ class BackEnd(mp.Process):
                     self.pause = False
                 elif data[0] == "color_refinement":
                     self.color_refinement()
+                    self.push_to_frontend()
+                elif data[0] == "refinement":
+                    self.map(self.current_window, iters=10)
+                    self.map(self.current_window, prune=True, iters=10)
                     self.push_to_frontend()
                 elif data[0] == "init":
                     cur_frame_idx = data[1]
@@ -449,7 +460,7 @@ class BackEnd(mp.Process):
                         if cam_idx < frames_to_optimize:
                             opt_params.append(
                                 {
-                                    "params": [viewpoint.unnorm_q_cw],
+                                    "params": [viewpoint.q_cw],
                                     "lr": self.config["Training"]["lr"]["cam_rot_delta"]
                                     * 0.5,
                                     "name": "rot_{}".format(viewpoint.uid),

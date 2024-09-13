@@ -46,13 +46,13 @@ class Camera(nn.Module):
         self.image_height = image_height
         self.image_width = image_width
 
-        self.unnorm_q_cw = nn.Parameter(
+        self.q_cw = nn.Parameter(
             torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float, requires_grad=True, device=device))
         self.p_cw = nn.Parameter(
             torch.tensor([0.0, 0.0, 0.0], dtype=torch.float, requires_grad=True, device=device))
 
         if uid == 0:
-            self.unnorm_q_cw.requires_grad = False
+            self.q_cw.requires_grad = False
             self.p_cw.requires_grad = False
             print("Freezing pose of camera at uid 0")
 
@@ -115,7 +115,7 @@ class Camera(nn.Module):
         return transposed world to camera transform
         """
         T_w2c = torch.eye(4, device=self.device).float()
-        q_w2c = F.normalize(self.unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+        q_w2c = self.q_cw.unsqueeze(0)
         T_w2c[0:3, 0:3] = build_rotation(q_w2c)
         T_w2c[0:3, 3] = self.p_cw
         return T_w2c.transpose(-2, -1)
@@ -125,7 +125,7 @@ class Camera(nn.Module):
         """
         return updated world to camera rotation
         """
-        q_w2c = F.normalize(self.unnorm_q_cw, p=2, dim=-1).unsqueeze(0)
+        q_w2c = self.q_cw.unsqueeze(0)
         return build_rotation(q_w2c)
 
     @property
@@ -151,13 +151,13 @@ class Camera(nn.Module):
     def full_proj_transform_camcentric(self):
         return self.projection_matrix
 
-    def update_RT(self, q, t):
+    def update_qp(self, q, t):
         norm_q = F.normalize(q, p=2, dim=-1)
-        self.unnorm_q_cw.data = norm_q.float().to(device=self.device)
+        self.q_cw.data = norm_q.float().to(device=self.device)
         self.p_cw.data = t.float().to(device=self.device)
 
-    def update_RT2(self, R, t):
-        self.unnorm_q_cw.data = matrix_to_quaternion(R).float().to(device=self.device)
+    def update_RT(self, R, t):
+        self.q_cw.data = matrix_to_quaternion(R).float().to(device=self.device)
         self.p_cw.data = t.float().to(device=self.device)
 
     def compute_grad_mask(self, config):

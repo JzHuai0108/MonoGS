@@ -254,7 +254,7 @@ class SLAM_GUI:
         W2C = (
             getWorld2View2(camera.R_gt, camera.T_gt)
             if gt
-            else getWorld2View(camera.unnorm_q_cw.clone().detach(), camera.p_cw.clone().detach())
+            else getWorld2View(camera.q_cw.clone().detach(), camera.p_cw.clone().detach())
         )
         W2C = W2C.cpu().numpy()
         C2W = np.linalg.inv(W2C)
@@ -536,7 +536,7 @@ class SLAM_GUI:
             W=image_gui.shape[2],
         )
         q_cw = matrix_to_quaternion(T[:3, :3])
-        current_cam.update_RT(q_cw, T[0:3, 3])
+        current_cam.update_qp(q_cw, T[0:3, 3])
         return current_cam
 
     def rasterise(self, current_cam):

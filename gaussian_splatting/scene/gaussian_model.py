@@ -112,6 +112,9 @@ class GaussianModel:
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
 
+    def normalize_rotations(self):
+        self._rotation.data = self.rotation_activation(self._rotation, p=2, dim=-1)
+
     def get_xyz_transformed(self, T_w2c_transposed: torch.Tensor):
         # Transform Centers of Gaussians to Camera Frame
         pts_ones = torch.ones(self._xyz.shape[0], 1).cuda().float()
@@ -177,7 +180,7 @@ class GaussianModel:
             convert_rgb_to_intensity=False,
         )
 
-        T_CW = getWorld2View(cam.unnorm_q_cw.clone().detach(), cam.p_cw.clone().detach()).cpu().numpy()
+        T_CW = getWorld2View(cam.q_cw.clone().detach(), cam.p_cw.clone().detach()).cpu().numpy()
         pcd_tmp = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd,
             o3d.camera.PinholeCameraIntrinsic(

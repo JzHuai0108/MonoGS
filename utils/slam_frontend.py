@@ -119,7 +119,7 @@ class FrontEnd(mp.Process):
             self.backend_queue.get()
 
         # Initialise the frame at the ground truth pose
-        viewpoint.update_RT2(viewpoint.R_gt, viewpoint.T_gt)
+        viewpoint.update_RT(viewpoint.R_gt, viewpoint.T_gt)
 
         self.kf_indices = []
         depth_map = self.add_new_keyframe(cur_frame_idx, init=True)
@@ -128,12 +128,12 @@ class FrontEnd(mp.Process):
 
     def tracking(self, cur_frame_idx, viewpoint):
         prev = self.cameras[cur_frame_idx - self.use_every_n_frames]
-        viewpoint.update_RT(prev.unnorm_q_cw.clone().detach(), prev.p_cw.clone().detach())
+        viewpoint.update_qp(prev.q_cw.clone().detach(), prev.p_cw.clone().detach())
 
         opt_params = []
         opt_params.append(
             {
-                "params": [viewpoint.unnorm_q_cw],
+                "params": [viewpoint.q_cw],
                 "lr": self.config["Training"]["lr"]["cam_rot_delta"],
                 "name": "rot_{}".format(viewpoint.uid),
             }
@@ -161,6 +161,11 @@ class FrontEnd(mp.Process):
         )
 
         pose_optimizer = torch.optim.Adam(opt_params)
+
+        candidate_cam_unnorm_rot = viewpoint.q_cw.detach().clone()
+        candidate_cam_tran = viewpoint.p_cw.detach().clone()
+        current_min_loss = float(1e20)
+
         for tracking_itr in range(self.tracking_itr_num):
             render_pkg = self.render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
@@ -177,10 +182,16 @@ class FrontEnd(mp.Process):
             loss_tracking.backward()
 
             with torch.no_grad():
-                prev_unnorm_q_cw = viewpoint.unnorm_q_cw.clone()
+                if loss_tracking < current_min_loss:
+                    current_min_loss = loss_tracking
+                    candidate_cam_unnorm_rot = viewpoint.q_cw.detach().clone()
+                    candidate_cam_tran = viewpoint.p_cw.detach().clone()
+
+                prev_q_cw = viewpoint.q_cw.clone()
                 prev_p_cw = viewpoint.p_cw.clone()
                 pose_optimizer.step()
-                converged = is_pose_converged(viewpoint, prev_unnorm_q_cw, prev_p_cw)
+                converged = is_pose_converged(viewpoint, prev_q_cw, prev_p_cw)
+                viewpoint.q_cw.data = torch.nn.functional.normalize(viewpoint.q_cw.data, p=2, dim=-1)
 
             if tracking_itr % 10 == 0:
                 self.q_main2vis.put(
@@ -194,6 +205,10 @@ class FrontEnd(mp.Process):
                 )
             if converged:
                 break
+        # Copy over the best candidate rotation & translation
+        with torch.no_grad():
+            viewpoint.q_cw.data = candidate_cam_unnorm_rot
+            viewpoint.p_cw.data = candidate_cam_tran
 
         self.median_depth = get_median_depth(depth, opacity)
         return render_pkg
@@ -211,8 +226,8 @@ class FrontEnd(mp.Process):
 
         curr_frame = self.cameras[cur_frame_idx]
         last_kf = self.cameras[last_keyframe_idx]
-        pose_CW = getWorld2View(curr_frame.unnorm_q_cw.clone().detach(), curr_frame.p_cw.clone().detach())
-        last_kf_CW = getWorld2View(last_kf.unnorm_q_cw.clone().detach(), last_kf.p_cw.clone().detach())
+        pose_CW = getWorld2View(curr_frame.q_cw.clone().detach(), curr_frame.p_cw.clone().detach())
+        last_kf_CW = getWorld2View(last_kf.q_cw.clone().detach(), last_kf.p_cw.clone().detach())
         last_kf_WC = torch.linalg.inv(last_kf_CW)
         dist = torch.norm((pose_CW @ last_kf_WC)[0:3, 3])
         dist_check = dist > kf_translation * self.median_depth
@@ -260,7 +275,7 @@ class FrontEnd(mp.Process):
         if to_remove:
             window.remove(to_remove[-1])
             removed_frame = to_remove[-1]
-        kf_0_WC = torch.linalg.inv(getWorld2View(curr_frame.unnorm_q_cw.clone().detach(), curr_frame.p_cw.clone().detach()))
+        kf_0_WC = torch.linalg.inv(getWorld2View(curr_frame.q_cw.clone().detach(), curr_frame.p_cw.clone().detach()))
 
         if len(window) > self.config["Training"]["window_size"]:
             # we need to find the keyframe to remove...
@@ -269,13 +284,13 @@ class FrontEnd(mp.Process):
                 inv_dists = []
                 kf_i_idx = window[i]
                 kf_i = self.cameras[kf_i_idx]
-                kf_i_CW = getWorld2View(kf_i.unnorm_q_cw.clone().detach(), kf_i.p_cw.clone().detach())
+                kf_i_CW = getWorld2View(kf_i.q_cw.clone().detach(), kf_i.p_cw.clone().detach())
                 for j in range(N_dont_touch, len(window)):
                     if i == j:
                         continue
                     kf_j_idx = window[j]
                     kf_j = self.cameras[kf_j_idx]
-                    kf_j_WC = torch.linalg.inv(getWorld2View(kf_j.unnorm_q_cw.clone().detach(), kf_j.p_cw.clone().detach()))
+                    kf_j_WC = torch.linalg.inv(getWorld2View(kf_j.q_cw.clone().detach(), kf_j.p_cw.clone().detach()))
                     T_CiCj = kf_i_CW @ kf_j_WC
                     inv_dists.append(1.0 / (torch.norm(T_CiCj[0:3, 3]) + 1e-6).item())
                 T_CiC0 = kf_i_CW @ kf_0_WC
@@ -309,7 +324,7 @@ class FrontEnd(mp.Process):
         self.occ_aware_visibility = occ_aware_visibility
 
         for kf_id, kf_R, kf_T in keyframes:
-            self.cameras[kf_id].update_RT(kf_R.clone(), kf_T.clone())
+            self.cameras[kf_id].update_qp(kf_R.clone(), kf_T.clone())
 
     def cleanup(self, cur_frame_idx):
         self.cameras[cur_frame_idx].clean()

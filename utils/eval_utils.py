@@ -82,13 +82,13 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
 
     def gen_pose_matrix2(q, p):
         pose = np.eye(4)
-        pose[0:3, 0:3] = build_rotation(F.normalize(q, p=2, dim=-1).unsqueeze(0)).squeeze().cpu().numpy()
+        pose[0:3, 0:3] = build_rotation(q.unsqueeze(0)).squeeze().cpu().numpy()
         pose[0:3, 3] = p.cpu().numpy()
         return pose
 
     for kf_id in kf_ids:
         kf = frames[kf_id]
-        pose_est = np.linalg.inv(gen_pose_matrix2(kf.unnorm_q_cw.clone().detach(), kf.p_cw.clone().detach()))
+        pose_est = np.linalg.inv(gen_pose_matrix2(kf.q_cw.clone().detach(), kf.p_cw.clone().detach()))
         pose_gt = np.linalg.inv(gen_pose_matrix(kf.R_gt, kf.T_gt))
 
         trj_id.append(frames[kf_id].uid)
