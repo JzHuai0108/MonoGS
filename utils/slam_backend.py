@@ -116,6 +116,11 @@ class BackEnd(mp.Process):
                 )
             loss_init.backward()
 
+            for param_group in self.gaussians.optimizer.param_groups:
+                for param in param_group['params']:
+                    if torch.isnan(param.grad).any():
+                        print(f'NaN detected in gradients of {param}')
+
             with torch.no_grad():
                 self.gaussians.max_radii2D[visibility_filter] = torch.max(
                     self.gaussians.max_radii2D[visibility_filter],
