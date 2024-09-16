@@ -288,6 +288,8 @@ class BackEnd(mp.Process):
                     == self.gaussian_update_offset
                 )
                 if update_gaussian:
+                    Log("Densifying the Gaussians at frame {} iter {}".format(
+                        self.viewpoints[self.current_window[0]].uid, self.iteration_count))
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
                         self.gaussian_th,
@@ -300,7 +302,8 @@ class BackEnd(mp.Process):
                 if (self.iteration_count % self.gaussian_reset) == 0 and (
                     not update_gaussian
                 ):
-                    Log("Resetting the opacity of non-visible Gaussians")
+                    Log("Resetting the opacity of non-visible Gaussians at frame {} iter {}".format(
+                        self.viewpoints[self.current_window[0]].uid, self.iteration_count))
                     self.gaussians.reset_opacity_nonvisible(visibility_filter_acm)
                     gaussian_split = True
 
