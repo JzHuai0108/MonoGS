@@ -104,7 +104,9 @@ def get_planar_loss_mapping(config, image, depth, rend_dist, rend_normal, surf_n
     rgb_loss = l1_rgb.mean()
 
     dist_loss = var_lambda_dist * rend_dist.mean()
-    normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+    # gt_normal = surf_normal
+    gt_normal = viewpoint.normal.cuda()
+    normal_error = (1 - (rend_normal * gt_normal).sum(dim=0))[None] + (rend_normal - gt_normal).norm(dim=0, p=1)[None]
     normal_loss = var_lambda_normal * normal_error.mean()
 
     if config["Training"]["monocular"]:

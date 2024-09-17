@@ -24,6 +24,7 @@ class Camera(nn.Module):
         fovy,
         image_height,
         image_width,
+        normal=None,
         device="cuda:0",
     ):
         super(Camera, self).__init__()
@@ -35,6 +36,7 @@ class Camera(nn.Module):
 
         self.original_image = color
         self.depth = depth
+        self.normal = normal
         self.grad_mask = None
 
         self.fx = fx
