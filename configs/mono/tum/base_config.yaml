@@ -36,9 +36,9 @@ Training:
   rgb_boundary_threshold: 0.01
 
   planar_loss: True
-  alpha: 0.95
-  lambda_dist: 100
-  lambda_normal: 0.05
+  alpha: 0.8
+  lambda_dist: 0.0
+  lambda_normal: 0.001
 
   kf_translation: 0.08
   kf_min_translation: 0.05
