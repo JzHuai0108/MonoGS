@@ -49,8 +49,8 @@ Training:
   spherical_harmonics: False
 
   lr:
-    cam_rot_delta: 0.002
-    cam_trans_delta: 0.002
+    cam_rot_delta: 0.003
+    cam_trans_delta: 0.001
 
 opt_params:
   iterations: 30000
