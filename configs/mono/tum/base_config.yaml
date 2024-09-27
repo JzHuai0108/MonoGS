@@ -35,6 +35,18 @@ Training:
   edge_threshold: 1.1
   rgb_boundary_threshold: 0.01
 
+  planar_loss: False
+  single_view_weight: 0.015
+  multi_view_ncc_weight: 0.15
+  multi_view_geo_weight: 0.03
+  multi_view_patch_size: 3
+  multi_view_sample_num: 10000
+  multi_view_pixel_noise_th: 1.0
+  multi_view_num: 4
+  multi_view_max_angle: 30
+  multi_view_min_dis: 0.1
+  multi_view_max_dis: 1.5
+
   kf_translation: 0.08
   kf_min_translation: 0.05
   kf_overlap: 0.9

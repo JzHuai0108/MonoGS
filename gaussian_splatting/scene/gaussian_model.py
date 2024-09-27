@@ -29,6 +29,7 @@ from gaussian_splatting.utils.general_utils import (
 from gaussian_splatting.utils.graphics_utils import BasicPointCloud, getWorld2View2
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
+from utils.pose_utils import quat_mult, matrix_to_quaternion
 
 
 class GaussianModel:
@@ -94,6 +95,24 @@ class GaussianModel:
     @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
+
+    def get_smallest_axis(self, return_idx=False):
+        rotation_matrices = self.get_rotation_matrix()
+        smallest_axis_idx = self.get_scaling.min(dim=-1)[1][..., None, None].expand(-1, 3, -1)
+        smallest_axis = rotation_matrices.gather(2, smallest_axis_idx)
+        if return_idx:
+            return smallest_axis.squeeze(dim=2), smallest_axis_idx[..., 0, 0]
+        return smallest_axis.squeeze(dim=2)
+
+    def get_normal(self, view_cam):
+        normal_global = self.get_smallest_axis()
+        gaussian_to_cam_global = view_cam.camera_center_updated - self._xyz
+        neg_mask = (normal_global * gaussian_to_cam_global).sum(-1) < 0.0
+        normal_global[neg_mask] = -normal_global[neg_mask]
+        return normal_global
+
+    def get_rotation_matrix(self):
+        return build_rotation(self.get_rotation)
 
     def get_covariance(self, scaling_modifier=1):
         return self.covariance_activation(

@@ -289,6 +289,18 @@ class BaseDataset(torch.utils.data.Dataset):
         pass
 
 
+def PILtoTorch(pil_image, resolution=None):
+    if resolution is None:
+        resized_image_PIL = pil_image
+    else:
+        resized_image_PIL = pil_image.resize(resolution)
+    resized_image = torch.from_numpy(np.array(resized_image_PIL)) / 255.0
+    if len(resized_image.shape) == 3:
+        return resized_image.permute(2, 0, 1)
+    else:
+        return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
+
+
 class MonocularDataset(BaseDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
@@ -317,7 +329,7 @@ class MonocularDataset(BaseDataset):
             [[cam0raw["fx"], 0.0, cam0raw["cx"]], [0.0, cam0raw["fy"], cam0raw["cy"],], [0.0, 0.0, 1.0],]
         )
         # distortion parameters
-        self.disorted = cam0raw["distorted"]
+        self.distorted = cam0raw["distorted"]
 
         if 'distortion_model' in cam0raw.keys():
             self.distortion_model = cam0raw['distortion_model']
@@ -385,7 +397,7 @@ class MonocularDataset(BaseDataset):
         image = np.array(rgb_img)
         depth = None
 
-        if self.disorted:
+        if self.distorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
             # cv2.imshow("undistorted", image)
             # cv2.waitKey(3000)
@@ -394,6 +406,10 @@ class MonocularDataset(BaseDataset):
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
 
+        image_pil = Image.fromarray(image)
+        image_gray_pil = image_pil.convert("L")
+        image_gray = PILtoTorch(image_gray_pil).clamp(0.0, 1.0).to(device=self.device, dtype=self.dtype)
+
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -401,7 +417,7 @@ class MonocularDataset(BaseDataset):
             .to(device=self.device, dtype=self.dtype)
         )
         pose = torch.from_numpy(pose).to(device=self.device)
-        return image, depth, pose
+        return image, depth, pose, image_gray
 
 
 class StereoDataset(BaseDataset):
@@ -463,7 +479,7 @@ class StereoDataset(BaseDataset):
         self.Rmat_r = np.array(calibration["cam1"]["R"]["data"]).reshape(3, 3)
 
         # distortion parameters
-        self.disorted = calibration["distorted"]
+        self.distorted = calibration["distorted"]
         if 'distortion_model' in calibration.keys():
             self.distortion_model = calibration['distortion_model']
         else:
@@ -549,7 +565,7 @@ class StereoDataset(BaseDataset):
         image = cv2.imread(color_path, 0)
         image_r = cv2.imread(color_path_r, 0)
         depth = None
-        if self.disorted:
+        if self.distorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
             image_r = cv2.remap(image_r, self.map1x_r, self.map1y_r, cv2.INTER_LINEAR)
         stereo = cv2.StereoSGBM_create(minDisparity=0, numDisparities=64, blockSize=20)
@@ -560,6 +576,8 @@ class StereoDataset(BaseDataset):
             disparity
         )  ## Following ORB-SLAM2 config, baseline*fx
         depth[depth < 0] = 0
+        image_gray_pil = Image.fromarray(image)
+        image_gray = PILtoTorch(image_gray_pil).clamp(0.0, 1.0).to(device=self.device, dtype=self.dtype)
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
         image = (
             torch.from_numpy(image / 255.0)
@@ -569,7 +587,7 @@ class StereoDataset(BaseDataset):
         )
         pose = torch.from_numpy(pose).to(device=self.device)
 
-        return image, depth, pose
+        return image, depth, pose, image_gray
 
 
 class TUMDataset(MonocularDataset):
@@ -661,7 +679,7 @@ class RealsenseDataset(BaseDataset):
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
         )
 
-        self.disorted = True
+        self.distorted = True
         self.dist_coeffs = np.asarray(self.rgb_intrinsics.coeffs)
         self.map1x, self.map1y = cv2.initUndistortRectifyMap(
             self.K, self.dist_coeffs, np.eye(3), self.K, (self.w, self.h), cv2.CV_32FC1
@@ -696,9 +714,11 @@ class RealsenseDataset(BaseDataset):
 
         image = np.asanyarray(rgb_frame.get_data())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        if self.disorted:
+        if self.distorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
-
+        image_pil = Image.fromarray(image)
+        image_gray_pil = image_pil.convert("L")
+        image_gray = PILtoTorch(image_gray_pil).clamp(0.0, 1.0).to(device=self.device, dtype=self.dtype)
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -706,7 +726,7 @@ class RealsenseDataset(BaseDataset):
             .to(device=self.device, dtype=self.dtype)
         )
 
-        return image, depth, pose
+        return image, depth, pose, image_gray
 
 
 def load_dataset(args, path, config):

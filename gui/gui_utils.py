@@ -9,7 +9,7 @@ from gaussian_splatting.utils.general_utils import (
     build_scaling_rotation,
     strip_symmetric,
 )
-
+from utils.pose_utils import matrix_to_quaternion, quat_mult
 cv_gl = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 
 

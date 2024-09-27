@@ -3,6 +3,7 @@ from torch import nn
 
 from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
 from utils.slam_utils import image_gradient, image_gradient_mask
+from utils.pose_utils import SE3_exp, SO3_exp, V
 
 
 class Camera(nn.Module):
@@ -22,20 +23,23 @@ class Camera(nn.Module):
         image_height,
         image_width,
         device="cuda:0",
+        gray_img=None
     ):
         super(Camera, self).__init__()
         self.uid = uid
         self.device = device
 
         T = torch.eye(4, device=device)
-        self.R = T[:3, :3]
-        self.T = T[:3, 3]
-        self.R_gt = gt_T[:3, :3]
-        self.T_gt = gt_T[:3, 3]
+        self.R = T[:3, :3] # world to cam rotation
+        self.T = T[:3, 3] # world in cam translation
+        self.R_gt = gt_T[:3, :3] # world to cam rotation
+        self.T_gt = gt_T[:3, 3] # world in cam translation
 
         self.original_image = color
+        self.gray_image = gray_img
         self.depth = depth
         self.grad_mask = None
+        self.nearest_id = []
 
         self.fx = fx
         self.fy = fy
@@ -64,7 +68,7 @@ class Camera(nn.Module):
 
     @staticmethod
     def init_from_dataset(dataset, idx, projection_matrix):
-        gt_color, gt_depth, gt_pose = dataset[idx]
+        gt_color, gt_depth, gt_pose, gt_gray = dataset[idx]
         return Camera(
             idx,
             gt_color,
@@ -80,6 +84,7 @@ class Camera(nn.Module):
             dataset.height,
             dataset.width,
             device=dataset.device,
+            gray_img=gt_gray
         )
 
     @staticmethod
@@ -106,6 +111,56 @@ class Camera(nn.Module):
     @property
     def camera_center(self):
         return self.world_view_transform.inverse()[3, :3]
+
+    @property
+    def world_view_transform_updated(self):
+        """
+        return transposed world to cam transform, accounting for the delta.
+        """
+        tau = torch.cat([self.cam_trans_delta, self.cam_rot_delta], dim=0)
+        T_w2c = torch.eye(4, device=self.device)
+        T_w2c[0:3, 0:3] = self.R
+        T_w2c[0:3, 3] = self.T
+        new_w2c = SE3_exp(tau) @ T_w2c
+        return new_w2c.transpose(0, 1)
+
+    @property
+    def camera_center_updated(self):
+        dR = SO3_exp(-self.cam_rot_delta)
+        camera_center = self.R.transpose(-2, -1) @ (-self.T - dR @ V(self.cam_rot_delta) @ self.cam_trans_delta)
+        return camera_center.squeeze()
+
+    @property
+    def camera_center_updated_slow(self):
+        return self.world_view_transform_updated.inverse()[3, :3]
+
+    def get_rays(self, scale=1.0):
+        W, H = int(self.image_width/scale), int(self.image_height/scale)
+        ix, iy = torch.meshgrid(
+            torch.arange(W), torch.arange(H), indexing='xy')
+        rays_d = torch.stack(
+                    [(ix-self.cx/scale) / self.fx * scale,
+                    (iy-self.cy/scale) / self.fy * scale,
+                    torch.ones_like(ix)], -1).float().cuda()
+        return rays_d
+
+    def get_K(self, scale=1.0):
+        K = torch.tensor([[self.fx / scale, 0, self.cx / scale],
+                          [0, self.fy / scale, self.cy / scale],
+                          [0, 0, 1]]).cuda()
+        return K
+
+    def get_inv_K(self, scale=1.0):
+        K_T = torch.tensor([[scale/self.fx, 0, -self.cx/self.fx],
+                            [0, scale/self.fy, -self.cy/self.fy],
+                            [0, 0, 1]]).cuda()
+        return K_T
+
+    def get_calib_matrix_nerf(self, scale=1.0):
+        intrinsic_matrix = torch.tensor(
+            [[self.fx / scale, 0, self.cx / scale], [0, self.fy / scale, self.cy / scale], [0, 0, 1]]).float()
+        extrinsic_matrix = self.world_view_transform_updated.transpose(0, 1).contiguous()  # cam2world
+        return intrinsic_matrix, extrinsic_matrix
 
     def update_RT(self, R, t):
         self.R = R.to(device=self.device)
@@ -144,6 +199,7 @@ class Camera(nn.Module):
 
     def clean(self):
         self.original_image = None
+        self.gray_image = None
         self.depth = None
         self.grad_mask = None
 
