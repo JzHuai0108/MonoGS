@@ -113,6 +113,10 @@ class BackEnd(mp.Process):
             loss_init.backward()
 
             with torch.no_grad():
+                # Keep track of max weight of each GS for pruning
+                gs_w = render_pkg["gs_w"]
+                self.gaussians.max_weight[visibility_filter] = torch.max(self.gaussians.max_weight[visibility_filter],
+                                                                         gs_w[visibility_filter])
                 self.gaussians.max_radii2D[visibility_filter] = torch.max(
                     self.gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter],
@@ -123,6 +127,7 @@ class BackEnd(mp.Process):
                 if mapping_iteration % self.init_gaussian_update == 0:
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
+                        self.opt_params.densify_grad_abs_threshold,
                         self.init_gaussian_th,
                         self.init_gaussian_extent,
                         None,
@@ -163,6 +168,7 @@ class BackEnd(mp.Process):
             visibility_filter_acm = []
             radii_acm = []
             n_touched_acm = []
+            gs_w_acm = []
 
             keyframes_opt = []
 
@@ -197,6 +203,7 @@ class BackEnd(mp.Process):
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
                 n_touched_acm.append(n_touched)
+                gs_w_acm.append(render_pkg["gs_w"])
 
             for cam_idx in torch.randperm(len(random_viewpoint_stack))[:2]:
                 viewpoint = random_viewpoint_stack[cam_idx]
@@ -226,6 +233,7 @@ class BackEnd(mp.Process):
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
+                gs_w_acm.append(render_pkg["gs_w"])
 
             scaling = self.gaussians.get_scaling
             isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1))
@@ -276,6 +284,9 @@ class BackEnd(mp.Process):
                     return False
 
                 for idx in range(len(viewspace_point_tensor_acm)):
+                    self.gaussians.max_weight[visibility_filter_acm[idx]] = torch.max(
+                        self.gaussians.max_weight[visibility_filter_acm[idx]],
+                        gs_w_acm[idx][visibility_filter_acm[idx]])
                     self.gaussians.max_radii2D[visibility_filter_acm[idx]] = torch.max(
                         self.gaussians.max_radii2D[visibility_filter_acm[idx]],
                         radii_acm[idx][visibility_filter_acm[idx]],
@@ -293,6 +304,7 @@ class BackEnd(mp.Process):
                         self.viewpoints[self.current_window[0]].uid, self.iteration_count))
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
+                        self.opt_params.densify_grad_abs_threshold,
                         self.gaussian_th,
                         self.gaussian_extent,
                         self.size_threshold,
@@ -307,6 +319,11 @@ class BackEnd(mp.Process):
                         self.viewpoints[self.current_window[0]].uid, self.iteration_count))
                     self.gaussians.reset_opacity_nonvisible(visibility_filter_acm)
                     gaussian_split = True
+                    # also remove Gaussians of small weight
+                    if self.opt_params.enable_weight_prune:
+                        prune_mask = (self.gaussians.max_weight < self.opt_params.min_weight).squeeze()
+                        self.gaussians.prune_points(prune_mask)
+                        self.gaussians.max_weight *= 0
 
                 self.gaussians.optimizer.step()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
