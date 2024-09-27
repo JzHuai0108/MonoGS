@@ -37,6 +37,7 @@ class BackEnd(mp.Process):
         self.current_window = []
         self.initialized = not self.monocular
         self.keyframe_optimizers = None
+        self.render = render
 
     def set_hyperparams(self):
         self.save_results = self.config["Results"]["save_results"]
