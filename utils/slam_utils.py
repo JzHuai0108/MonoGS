@@ -1,4 +1,5 @@
 import torch
+from gaussian_splatting.utils.loss_utils import ssim2
 
 
 def image_gradient(image):
@@ -126,6 +127,45 @@ def get_loss_mapping_rgbd(config, image, depth, viewpoint, initialization=False)
     l1_depth = torch.abs(depth * depth_pixel_mask - gt_depth * depth_pixel_mask)
 
     return alpha * l1_rgb.mean() + (1 - alpha) * l1_depth.mean()
+
+
+def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=False):
+    if initialization:
+        image_ab = image
+    else:
+        image_ab = (torch.exp(viewpoint.exposure_a)) * image + viewpoint.exposure_b
+
+    gt_image = viewpoint.original_image.cuda()
+    _, h, w = gt_image.shape
+    mask_shape = (1, h, w)
+    rgb_boundary_threshold = config["Training"]["rgb_boundary_threshold"]
+    rgb_pixel_mask = (gt_image.sum(dim=0) > rgb_boundary_threshold).view(*mask_shape)
+
+    diff_img = torch.abs(image_ab * rgb_pixel_mask - gt_image * rgb_pixel_mask)
+    _, ssim_map = ssim2(image_ab, gt_image)
+    diff_ssim = 1 - ssim_map
+    lambda_dssim = config["opt_params"]["lambda_dssim"]
+    diff_img = (1 - lambda_dssim) * diff_img + lambda_dssim * diff_ssim
+
+    if config["Training"]["monocular"]:
+        return diff_img.mean()
+
+    alpha = config["Training"]["alpha"] if "alpha" in config["Training"] else 0.95
+    gt_depth = torch.from_numpy(viewpoint.depth).to(
+        dtype=torch.float32, device=image_ab.device
+    )[None]
+    depth_pixel_mask = (gt_depth > 0.01).view(*mask_shape)
+
+    if "adaptive_depth_w" in config["Training"] and config["Training"]["adaptive_depth_w"]:
+        eps = 1e-5
+        diff_depth = ((gt_depth - depth).abs() / (gt_depth + depth + eps)).clamp(0, 1)
+        weight_mask = 1 - diff_depth
+        diff_img = diff_img * weight_mask
+
+    img_loss = diff_img.mean()
+    l1_depth = torch.abs(depth * depth_pixel_mask - gt_depth * depth_pixel_mask)
+    depth_loss = l1_depth.mean()
+    return alpha * img_loss + (1 - alpha) * depth_loss
 
 
 def get_median_depth(depth, opacity=None, mask=None, return_std=False):

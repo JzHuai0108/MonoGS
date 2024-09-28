@@ -58,7 +58,7 @@ def create_window(window_size, channel):
     return window
 
 
-def ssim(img1, img2, window_size=11, size_average=True):
+def ssim2(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
     window = create_window(window_size, channel)
 
@@ -67,6 +67,10 @@ def ssim(img1, img2, window_size=11, size_average=True):
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
+
+
+def ssim(img1, img2, window_size=11, size_average=True):
+    return ssim2(img1, img2, window_size, size_average)[0]
 
 
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
@@ -96,6 +100,6 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     )
 
     if size_average:
-        return ssim_map.mean()
+        return ssim_map.mean(), ssim_map
     else:
-        return ssim_map.mean(1).mean(1).mean(1)
+        return ssim_map.mean(1).mean(1).mean(1), ssim_map
