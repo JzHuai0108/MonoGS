@@ -59,6 +59,7 @@ class BackEnd(mp.Process):
         self.gaussian_reset = self.config["Training"]["gaussian_reset"]
         self.size_threshold = self.config["Training"]["size_threshold"]
         self.window_size = self.config["Training"]["window_size"]
+        self.use_abs_grad = (self.config["Training"]["use_abs_grad"] if "use_abs_grad" in self.config["Training"] else True)
         self.single_thread = (
             self.config["Training"]["single_thread"]
             if "single_thread" in self.config["Training"]
@@ -155,6 +156,7 @@ class BackEnd(mp.Process):
                         self.init_gaussian_th,
                         self.init_gaussian_extent,
                         None,
+                        self.use_abs_grad
                     )
 
                 if self.iteration_count == self.init_gaussian_reset or (
@@ -332,6 +334,7 @@ class BackEnd(mp.Process):
                         self.gaussian_th,
                         self.gaussian_extent,
                         self.size_threshold,
+                        self.use_abs_grad
                     )
                     gaussian_split = True
 

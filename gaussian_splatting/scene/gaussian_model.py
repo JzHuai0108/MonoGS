@@ -819,7 +819,7 @@ class GaussianModel:
             new_n_obs=new_n_obs,
         )
 
-    def densify_and_prune(self, max_grad, max_grad_abs, min_opacity, extent, max_screen_size):
+    def densify_and_prune(self, max_grad, max_grad_abs, min_opacity, extent, max_screen_size, use_abs_grad):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -827,7 +827,10 @@ class GaussianModel:
         grads_abs[grads_abs.isnan()] = 0.0
 
         self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads_abs, max_grad_abs, extent)
+        if use_abs_grad:
+            self.densify_and_split(grads_abs, max_grad_abs, extent)
+        else:
+            self.densify_and_split(grads, max_grad, extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
