@@ -10,45 +10,14 @@ Results:
 Dataset:
   type: 'rrxio'
   sensor_type: 'monocular'
-  modality: 'thermal'
   pcd_downsample: 64
   pcd_downsample_init: 32
   adaptive_pointsize: True
   point_size: 0.01
 
-  dataset_path: "/media/pi/BackupPlus/jhuai/data/rrxio/irs_rtvi_datasets_2021/mocap_easy"
-  Calibration:
-    raw:
-      fx: 404.98
-      fy: 405.06
-      cx: 319.05
-      cy: 251.84
-      k1: -0.09202092749042277
-      k2: 0.04012198239889151
-      k3: -0.03795923559427829
-      k4: 0.010728597805678742
-      width: 640
-      height: 512
-      depth_scale: 500.0
-      distorted: True
-      distortion_model: 'equidistant'
-    opt:
-      # K optimal obtained by cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() with balance=0.0
-      fx: 334.19639643
-      fy: 334.26241379
-      cx: 318.48142004
-      cy: 250.56663663
-      k1: 0.0
-      k2: 0.0
-      k3: 0.0
-      k4: 0.0
-      width: 640
-      height: 512
-      depth_scale: 500.0
-      distorted: False
-      distortion_model: ''
-
 Training:
+  adaptive_depth_w: True
+  adaptive_image_w: False # better keep this False as it can cause unstable training.
   init_itr_num: 1050
   init_gaussian_update: 100
   init_gaussian_reset: 500
@@ -72,9 +41,12 @@ Training:
   kf_min_translation: 0.05
   kf_overlap: 0.9
   kf_cutoff: 0.3
+  new_gaussians_by_sil: True
   prune_mode: 'slam'
+  scales_by_monogs: False
   single_thread: False
   spherical_harmonics: False
+  use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
 
   lr:
     cam_rot_delta: 0.003
@@ -97,6 +69,9 @@ opt_params:
   densify_from_iter: 500
   densify_until_iter: 15000
   densify_grad_threshold: 0.0002
+  densify_grad_abs_threshold: 0.0004
+  enable_weight_prune: False
+  min_weight: 0.7
 
 model_params:
   sh_degree: 0
