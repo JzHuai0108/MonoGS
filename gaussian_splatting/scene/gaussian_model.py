@@ -204,6 +204,139 @@ class GaussianModel:
 
         return fused_point_cloud, features, scales, rots, opacities
 
+    def create_masked_pcd_from_image(self, cam_info, depthmap=None, mask=None, init=False, scale=2.0):
+        cam = cam_info
+        image_ab = (torch.exp(cam.exposure_a)) * cam.original_image + cam.exposure_b
+        image_ab = torch.clamp(image_ab, 0.0, 1.0)
+        rgb_raw = (image_ab * 255).byte().permute(1, 2, 0).contiguous()
+
+        if depthmap is not None:
+            rgb = rgb_raw.type(torch.uint8)
+            depth_tensor = torch.from_numpy(depthmap.astype(np.float32)).to(device=rgb.device)
+        else:
+            depth_raw = cam.depth
+            if depth_raw is None:
+                depth_raw = np.empty((cam.image_height, cam.image_width))
+
+            if self.config["Dataset"]["sensor_type"] == "monocular":
+                depth_raw = (
+                    np.ones_like(depth_raw)
+                    + (np.random.randn(depth_raw.shape[0], depth_raw.shape[1]) - 0.5)
+                    * 0.05
+                ) * scale
+
+            rgb = rgb_raw.type(torch.uint8)
+            depth_tensor = torch.from_numpy(depth_raw.astype(np.float32)).to(device=rgb.device)
+
+        return self.create_masked_pcd_from_image_and_depth(cam, rgb, depth_tensor, mask, init)
+
+    def create_masked_pcd_from_image_and_depth(self, cam, rgb, depth, mask, init=False):
+        """
+        rgb: torch.tensor (H, W, C)
+        depth: torch.tensor (H, W)
+        """
+        if init:
+            downsample_factor = self.config["Dataset"]["pcd_downsample_init"]
+        else:
+            downsample_factor = self.config["Dataset"]["pcd_downsample"]
+        point_size = self.config["Dataset"]["point_size"]
+        if "adaptive_pointsize" in self.config["Dataset"]:
+            if self.config["Dataset"]["adaptive_pointsize"]:
+                point_size = min(0.05, point_size * torch.median(depth))
+        # get_pointcloud on our own
+        width, height = rgb.shape[1], rgb.shape[0]
+        CX = cam.cx
+        CY = cam.cy
+        FX = cam.fx
+        FY = cam.fy
+
+        # Compute indices of pixels
+        x_grid, y_grid = torch.meshgrid(torch.arange(width).cuda().float(), 
+                                        torch.arange(height).cuda().float(),
+                                        indexing='xy')
+        xx = (x_grid - CX)/FX
+        yy = (y_grid - CY)/FY
+        xx = xx.reshape(-1)
+        yy = yy.reshape(-1)
+        depth_z = depth.reshape(-1)
+
+        # Initialize point cloud
+        pts_cam = torch.stack((xx * depth_z, yy * depth_z, depth_z), dim=-1)
+        w2c = getWorld2View2(cam.R, cam.T)
+    
+        pix_ones = torch.ones(height * width, 1).cuda().float()
+        pts4 = torch.cat((pts_cam, pix_ones), dim=1)
+        c2w = torch.inverse(w2c)
+        pts = (c2w @ pts4.T).T[:, :3]
+
+        # Compute mean squared distance for initializing the scale of the Gaussians        
+        # Projective Geometry (this is fast, farther -> larger radius)
+        scale_gaussian = depth_z / ((FX + FY)/2)
+        mean3_sq_dist = scale_gaussian**2
+
+        # Colorize point cloud
+        cols = rgb.reshape(-1, 3) # (H, W, C) -> (H * W, C)
+        point_cld = torch.cat((pts, cols), -1)
+
+        # Select points based on mask
+        if mask is not None:
+            point_cld = point_cld[mask]
+            mean3_sq_dist = mean3_sq_dist[mask]
+
+        N = point_cld.size(0)
+        if N > 1000:
+            num_points_to_keep = N // downsample_factor
+            indices = torch.randperm(N)[:num_points_to_keep]
+            point_cld = point_cld[indices]
+            mean3_sq_dist = mean3_sq_dist[indices]
+            print('New gaussians with silhouette from {} to {}'.format(N, point_cld.size(0)))
+        else:
+            print('New gaussian with silhouette {}'.format(N))
+
+        new_xyz = point_cld[:, :3].cpu().numpy()
+        new_rgb = point_cld[:, 3:].cpu().numpy()
+
+        pcd = BasicPointCloud(
+            points=new_xyz, colors=new_rgb, normals=np.zeros((new_xyz.shape[0], 3))
+        )
+        self.ply_input = pcd
+
+        fused_point_cloud = torch.from_numpy(np.asarray(pcd.points)).float().cuda()
+        fused_color = RGB2SH(torch.from_numpy(np.asarray(pcd.colors)).float().cuda())
+        features = (
+            torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2))
+            .float()
+            .cuda()
+        )
+        features[:, :3, 0] = fused_color
+        features[:, 3:, 1:] = 0.0
+        scales_by_monogs = self.config["Training"]["scales_by_monogs"] if "scales_by_monogs" in self.config["Training"] else True
+        if scales_by_monogs:
+            dist2 = (
+                torch.clamp_min(
+                    distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()),
+                    0.0000001,
+                )
+                * point_size
+            )
+            scales = torch.log(torch.sqrt(dist2))[..., None]
+        else: # splatam approach to initialize scales
+            scales = torch.log(torch.sqrt(mean3_sq_dist))[..., None]
+
+        if not self.isotropic:
+            scales = scales.repeat(1, 3)
+
+        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+        rots[:, 0] = 1
+        opacities = inverse_sigmoid(
+            0.5
+            * torch.ones(
+                (fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"
+            )
+        )
+
+        return fused_point_cloud, features, scales, rots, opacities
+
     def init_lr(self, spatial_lr_scale):
         self.spatial_lr_scale = spatial_lr_scale
 
@@ -235,11 +368,16 @@ class GaussianModel:
         )
 
     def extend_from_pcd_seq(
-        self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None
+        self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None, mask=None
     ):
-        fused_point_cloud, features, scales, rots, opacities = (
-            self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
-        )
+        if mask is None:
+            fused_point_cloud, features, scales, rots, opacities = (
+                self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
+            )
+        else:
+            fused_point_cloud, features, scales, rots, opacities = (
+                self.create_masked_pcd_from_image(cam_info, depthmap, mask, init, scale=scale)
+            )
         self.extend_from_pcd(
             fused_point_cloud, features, scales, rots, opacities, kf_id
         )

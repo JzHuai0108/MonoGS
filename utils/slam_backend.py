@@ -10,7 +10,7 @@ from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
-from utils.slam_utils import get_loss_mapping2
+from utils.slam_utils import get_loss_mapping2, get_depth_and_silhouette
 
 
 class BackEnd(mp.Process):
@@ -65,10 +65,34 @@ class BackEnd(mp.Process):
             else False
         )
 
-    def add_next_kf(self, frame_idx, viewpoint, init=False, scale=2.0, depth_map=None):
+    def depth_and_silhouette(self, w2c):
+        return get_depth_and_silhouette(self.gaussians.get_xyz, w2c)
+
+    def add_next_kf(self, frame_idx, viewpoint, init=False, scale=2.0, depth_map=None, depth_sil=None):
+        """
+        depth_map: ndarray (H, W)
+        depth_sil: torch.tensor (3, H, W)
+        """
+        non_presence_mask = None
+        if depth_sil is not None:
+            silhouette = depth_sil[1, :, :]
+            sil_thres = self.config["Training"]["sil_thres"] if "sil_thres" in self.config["Training"] else 0.5
+            non_presence_sil_mask = (silhouette < sil_thres)
+            # Check for new foreground objects by using GT depth
+            render_depth = depth_sil[0, :, :]
+            gt_depth = torch.from_numpy(viewpoint.depth).to(dtype=torch.float32, device=render_depth.device)
+            depth_error = torch.abs(gt_depth - render_depth) * (gt_depth > 0)
+            non_presence_depth_mask = (render_depth > gt_depth) * (depth_error > 50*depth_error.median())
+            # Determine non-presence mask
+            non_presence_mask = non_presence_sil_mask | non_presence_depth_mask
+
+            if depth_map is not None:
+                valid_depth_mask = torch.from_numpy(depth_map > 0).to(device=non_presence_mask.device)
+                non_presence_mask = non_presence_mask & valid_depth_mask
+            # Flatten mask
+            non_presence_mask = non_presence_mask.reshape(-1)
         self.gaussians.extend_from_pcd_seq(
-            viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map
-        )
+            viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map, mask=non_presence_mask)
 
     def reset(self):
         self.iteration_count = 0
