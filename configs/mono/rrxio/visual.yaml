@@ -1,0 +1,36 @@
+inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/rrxio/base_config.yaml"
+
+Dataset:
+  modality: 'visual'
+
+  dataset_path: "/media/pi/BackupPlus/jhuai/data/rrxio/irs_rtvi_datasets_2021/mocap_easy"
+  Calibration:
+    raw:
+      fx: 372.51
+      fy: 372.51
+      cx: 318.77
+      cy: 253.24
+      k1: 0.013404032824313381
+      k2: 0.013570186060580948
+      k3: -0.011005228038287808
+      k4: 0.0040591597486
+      width: 640
+      height: 512
+      depth_scale: 500.0
+      distorted: True
+      distortion_model: 'equidistant'
+     # K optimal obtained by cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() with balance=0.0
+    opt:
+      fx: 315.93052466
+      fy: 315.93052466
+      cx: 318.24482797
+      cy: 252.56753124
+      k1: 0.0
+      k2: 0.0
+      k3: 0.0
+      k4: 0.0
+      width: 640
+      height: 512
+      depth_scale: 500.0
+      distorted: False
+      distortion_model: ''

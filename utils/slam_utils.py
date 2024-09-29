@@ -156,14 +156,17 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
     )[None]
     depth_pixel_mask = (gt_depth > 0.01).view(*mask_shape)
 
-    if "adaptive_depth_w" in config["Training"] and config["Training"]["adaptive_depth_w"]:
-        eps = 1e-5
-        diff_depth = ((gt_depth - depth).abs() / (gt_depth + depth + eps)).clamp(0, 1)
-        weight_mask = 1 - diff_depth
+    eps = 1e-5
+    diff_depth = ((gt_depth - depth).abs() / (gt_depth + depth + eps)).clamp(0, 1)
+    weight_mask = 1 - diff_depth
+
+    l1_depth = torch.abs((depth - gt_depth) * depth_pixel_mask)
+    if "adaptive_image_w" in config["Training"] and config["Training"]["adaptive_image_w"]:
         diff_img = diff_img * weight_mask
+    if "adaptive_depth_w" in config["Training"] and config["Training"]["adaptive_depth_w"]:
+        l1_depth = l1_depth * weight_mask
 
     img_loss = diff_img.mean()
-    l1_depth = torch.abs(depth * depth_pixel_mask - gt_depth * depth_pixel_mask)
     depth_loss = l1_depth.mean()
     return alpha * img_loss + (1 - alpha) * depth_loss
 
