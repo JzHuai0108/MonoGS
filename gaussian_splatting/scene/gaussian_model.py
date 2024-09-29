@@ -163,7 +163,10 @@ class GaussianModel:
             extrinsic=W2C,
             project_valid_depth_only=True,
         )
+        N = len(pcd_tmp.points)
         pcd_tmp = pcd_tmp.random_down_sample(1.0 / downsample_factor)
+        dN = len(pcd_tmp.points)
+        print('New gaussians downsampled from {} to {}'.format(N, dN))
         new_xyz = np.asarray(pcd_tmp.points)
         new_rgb = np.asarray(pcd_tmp.colors)
 
@@ -284,14 +287,14 @@ class GaussianModel:
             mean3_sq_dist = mean3_sq_dist[mask]
 
         N = point_cld.size(0)
-        if N > 1000:
-            num_points_to_keep = N // downsample_factor
+        num_points_to_keep = width * height // downsample_factor
+        if N > num_points_to_keep:
             indices = torch.randperm(N)[:num_points_to_keep]
             point_cld = point_cld[indices]
             mean3_sq_dist = mean3_sq_dist[indices]
-            print('New gaussians with silhouette from {} to {}'.format(N, point_cld.size(0)))
+            print('New gaussians with silhouette downsampled from {} to {}'.format(N, point_cld.size(0)))
         else:
-            print('New gaussian with silhouette {}'.format(N))
+            print('New gaussians with silhouette {}'.format(N))
 
         new_xyz = point_cld[:, :3].cpu().numpy()
         new_rgb = point_cld[:, 3:].cpu().numpy()
