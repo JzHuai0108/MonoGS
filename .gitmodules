@@ -3,4 +3,4 @@
 	url = https://gitlab.inria.fr/bkerbl/simple-knn.git
 [submodule "submodules/diff-gaussian-rasterization"]
 	path = submodules/diff-gaussian-rasterization
-	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose.git
+	url = git@github.com:JzHuai0108/diff-gaussian-rasterization.git
