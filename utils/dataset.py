@@ -317,12 +317,12 @@ class MonocularDataset(BaseDataset):
             [[cam0raw["fx"], 0.0, cam0raw["cx"]], [0.0, cam0raw["fy"], cam0raw["cy"],], [0.0, 0.0, 1.0],]
         )
         # distortion parameters
-        self.disorted = cam0raw["distorted"]
+        self.distorted = cam0raw["distorted"]
 
         if 'distortion_model' in cam0raw.keys():
             self.distortion_model = cam0raw['distortion_model']
         else:
-            self.distortion_model = 'radtan'
+            self.distortion_model = None
         print(f"Distortion model: {self.distortion_model}")
 
         if self.distortion_model == 'radtan':
@@ -343,7 +343,7 @@ class MonocularDataset(BaseDataset):
                 (self.width, self.height),
                 cv2.CV_32FC1,
             )
-        else:
+        elif self.distortion_model == "equidistant":
             self.dist_coeffs = np.array(
                 [
                     cam0raw["k1"],
@@ -360,10 +360,15 @@ class MonocularDataset(BaseDataset):
                 (self.width, self.height),
                 cv2.CV_32FC1,
             )
-    
+        elif self.distortion_model is None:
+            self.dist_coeffs = np.zeros(5)
+            self.map1x, self.map1y = cv2.initUndistortRectifyMap(
+                self.K_raw, self.dist_coeffs, np.eye(3), self.K,
+                (self.width, self.height), cv2.CV_32FC1)
+
         # depth parameters
-        self.has_depth = True if "depth_scale" in calibration.keys() else False
-        self.depth_scale = calibration["depth_scale"] if self.has_depth else None
+        self.has_depth = True if "depth_scale" in cam0opt.keys() else False
+        self.depth_scale = cam0opt["depth_scale"] if self.has_depth else None
 
         # Default scene scale
         nerf_normalization_radius = 5
@@ -383,16 +388,15 @@ class MonocularDataset(BaseDataset):
         else:
             rgb_img = img
         image = np.array(rgb_img)
+        image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+        # cv2.imshow("undistorted", image)
+        # cv2.waitKey(3000)
+
         depth = None
-
-        if self.disorted:
-            image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
-            # cv2.imshow("undistorted", image)
-            # cv2.waitKey(3000)
-
         if self.has_depth:
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
+            depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_NEAREST)
 
         image = (
             torch.from_numpy(image / 255.0)
@@ -463,7 +467,7 @@ class StereoDataset(BaseDataset):
         self.Rmat_r = np.array(calibration["cam1"]["R"]["data"]).reshape(3, 3)
 
         # distortion parameters
-        self.disorted = calibration["distorted"]
+        self.distorted = calibration["distorted"]
         if 'distortion_model' in calibration.keys():
             self.distortion_model = calibration['distortion_model']
         else:
@@ -549,7 +553,7 @@ class StereoDataset(BaseDataset):
         image = cv2.imread(color_path, 0)
         image_r = cv2.imread(color_path_r, 0)
         depth = None
-        if self.disorted:
+        if self.distorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
             image_r = cv2.remap(image_r, self.map1x_r, self.map1y_r, cv2.INTER_LINEAR)
         stereo = cv2.StereoSGBM_create(minDisparity=0, numDisparities=64, blockSize=20)
@@ -661,7 +665,7 @@ class RealsenseDataset(BaseDataset):
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
         )
 
-        self.disorted = True
+        self.distorted = True
         self.dist_coeffs = np.asarray(self.rgb_intrinsics.coeffs)
         self.map1x, self.map1y = cv2.initUndistortRectifyMap(
             self.K, self.dist_coeffs, np.eye(3), self.K, (self.w, self.h), cv2.CV_32FC1
@@ -696,7 +700,7 @@ class RealsenseDataset(BaseDataset):
 
         image = np.asanyarray(rgb_frame.get_data())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        if self.disorted:
+        if self.distorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
 
         image = (

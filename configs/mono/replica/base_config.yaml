@@ -2,22 +2,37 @@ Results:
   save_results: True
   save_dir: "results"
   save_trj: True
-  save_trj_kf_intv: 10
+  save_trj_kf_intv: 20
   use_gui: True
   eval_rendering: False
-  use_wandb: True
+  use_wandb: False
 
 Dataset:
-  type: 'rrxio'
   sensor_type: 'monocular'
   pcd_downsample: 64
   pcd_downsample_init: 32
   adaptive_pointsize: True
-  point_size: 0.01
+  point_size: 0.05
+  type: 'replica'
+  Calibration:
+    fx: 600.0
+    fy: 600.0
+    cx: 599.5
+    cy: 339.5
+    k1: 0.0
+    k2: 0.0
+    p1: 0.0
+    p2: 0.0
+    k3: 0.0
+    width: 1200
+    height: 680
+    depth_scale: 6553.5
+    distorted: False
+
 
 Training:
-  adaptive_depth_w: True
-  adaptive_image_w: False # better keep this False as it can cause unstable training.
+  adaptive_depth_w: False
+  adaptive_image_w: False
   init_itr_num: 1050
   init_gaussian_update: 100
   init_gaussian_reset: 500
@@ -31,28 +46,29 @@ Training:
   gaussian_extent: 1.0
   gaussian_reset: 2001
   size_threshold: 20
-  kf_interval: 5
-  window_size: 8
-  pose_window: 3
-  edge_threshold: 1.1
+  kf_interval: 4
+  window_size: 10
+  pose_window: 5
+  edge_threshold: 4
   rgb_boundary_threshold: 0.01
 
-  kf_translation: 0.08
-  kf_min_translation: 0.05
-  kf_overlap: 0.9
+  kf_translation: 0.04
+  kf_min_translation: 0.02
+  kf_overlap: 0.95
   kf_cutoff: 0.3
   new_gaussians_by_sil: True
   sil_thres: 0.5
   prune_mode: 'slam'
   scales_by_monogs: False
-  single_thread: False
+  single_thread: True
   spherical_harmonics: False
-  use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
+  use_abs_grad: True
   visibility_prune: True
 
   lr:
     cam_rot_delta: 0.003
     cam_trans_delta: 0.001
+
 
 opt_params:
   iterations: 30000
@@ -82,7 +98,7 @@ model_params:
   resolution: -1
   white_background: False
   data_device: "cuda"
-
+  
 pipeline_params:
   convert_SHs_python: False
   compute_cov3D_python: False

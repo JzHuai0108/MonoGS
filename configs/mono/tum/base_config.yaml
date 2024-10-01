@@ -16,7 +16,7 @@ Dataset:
   point_size: 0.01
 
 Training:
-  adaptive_depth_w: True
+  adaptive_depth_w: False
   adaptive_image_w: False # better keep this False as it can cause unstable training.
   init_itr_num: 1050
   init_gaussian_update: 100
@@ -42,11 +42,13 @@ Training:
   kf_overlap: 0.9
   kf_cutoff: 0.3
   new_gaussians_by_sil: True
+  sil_thres: 0.5
   prune_mode: 'slam'
   scales_by_monogs: False
   single_thread: False
   spherical_harmonics: False
   use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
+  visibility_prune: True
 
   lr:
     cam_rot_delta: 0.003

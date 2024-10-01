@@ -60,6 +60,8 @@ class BackEnd(mp.Process):
         self.size_threshold = self.config["Training"]["size_threshold"]
         self.window_size = self.config["Training"]["window_size"]
         self.use_abs_grad = (self.config["Training"]["use_abs_grad"] if "use_abs_grad" in self.config["Training"] else True)
+        self.visibility_prune = (self.config["Training"]["visibility_prune"]
+                                 if "visibility_prune" in self.config["Training"] else True)
         self.single_thread = (
             self.config["Training"]["single_thread"]
             if "single_thread" in self.config["Training"]
@@ -296,7 +298,7 @@ class BackEnd(mp.Process):
                             to_prune = torch.logical_and(
                                 self.gaussians.n_obs <= prune_coviz, mask
                             )
-                        if to_prune is not None and self.monocular:
+                        if to_prune is not None and (self.monocular or self.visibility_prune):
                             self.gaussians.prune_points(to_prune.cuda())
                             for idx in range((len(current_window))):
                                 current_idx = current_window[idx]

@@ -1,4 +1,4 @@
-inherit_from: "configs/mono/tum/base_config.yaml"
+inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/tum/base_config.yaml"
 
 Dataset:
   dataset_path: "datasets/tum/rgbd_dataset_freiburg2_xyz/"
