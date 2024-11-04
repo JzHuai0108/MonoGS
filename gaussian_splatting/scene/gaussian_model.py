@@ -414,7 +414,7 @@ class GaussianModel:
             },
             {
                 "params": [self._scaling],
-                "lr": training_args.scaling_lr * self.spatial_lr_scale,
+                "lr": training_args.scaling_lr,
                 "name": "scaling",
             },
             {

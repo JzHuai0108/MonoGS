@@ -34,6 +34,7 @@ def render(
     Render the scene.
 
     Background tensor (bg_color) must be on GPU!
+    To render a down-sampled image, simply downscale image_width and image_height of viewpoint_camera.
     """
 
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means

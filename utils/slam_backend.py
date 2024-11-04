@@ -328,8 +328,8 @@ class BackEnd(mp.Process):
                     == self.gaussian_update_offset
                 )
                 if update_gaussian:
-                    Log("Densifying the Gaussians at frame {} iter {}".format(
-                        self.viewpoints[self.current_window[0]].uid, self.iteration_count))
+                    Log("Densifying the Gaussians at frame {} iter {} kfidx {}".format(
+                        self.viewpoints[self.current_window[0]].uid, self.iteration_count, current_window[0]))
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
                         self.opt_params.densify_grad_abs_threshold,
