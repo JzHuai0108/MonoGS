@@ -442,15 +442,15 @@ class MonocularDataset(BaseDataset):
                 (self.width, self.height),
                 cv2.CV_32FC1,
             )
-        elif self.distortion_model is None:
+        elif self.distortion_model is None or self.distortion_model == "":
             self.dist_coeffs = np.zeros(5)
-            self.map1x, self.map1y = cv2.initUndistortRectifyMap(
-                self.K_raw, self.dist_coeffs, np.eye(3), self.K,
-                (self.width, self.height), cv2.CV_32FC1)
+            self.map1x = None
+            self.map1y = None
 
         # depth parameters
         self.has_depth = True if "depth_scale" in cam0opt.keys() else False
         self.depth_scale = cam0opt["depth_scale"] if self.has_depth else None
+        print(f"has depth? {self.has_depth}, depth_scale {self.depth_scale}.")
 
         # Default scene scale
         nerf_normalization_radius = 5
@@ -470,15 +470,17 @@ class MonocularDataset(BaseDataset):
         else:
             rgb_img = img
         image = np.array(rgb_img)
-        image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
-        # cv2.imshow("undistorted", image)
-        # cv2.waitKey(3000)
+        if self.map1x is not None:
+            image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+            # cv2.imshow("undistorted", image)
+            # cv2.waitKey(3000)
 
         depth = None
         if self.has_depth:
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
-            depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_NEAREST)
+            if self.map1x is not None:
+                depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_NEAREST)
 
         image = (
             torch.from_numpy(image / 255.0)
@@ -691,6 +693,18 @@ class ReplicaDataset(MonocularDataset):
         self.poses = parser.poses
 
 
+class VIVIDDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        use_thermal = config['Dataset']['modality'] == 'thermal'
+        parser = VIVIDParser(dataset_path, use_thermal, 0.3)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+        self.poses = parser.poses
+
+
 class EurocDataset(StereoDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
@@ -806,5 +820,7 @@ def load_dataset(args, path, config):
         return RealsenseDataset(args, path, config)
     elif config["Dataset"]["type"] == "rrxio":
         return RRXIODataset(args, path, config)
+    elif config["Dataset"]["type"] == "vivid":
+        return VIVIDDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")

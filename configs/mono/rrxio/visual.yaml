@@ -3,7 +3,7 @@ inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/rrxio/base_config.yaml"
 Dataset:
   modality: 'visual'
 
-  dataset_path: "/media/pi/BackupPlus/jhuai/data/rrxio/irs_rtvi_datasets_2021/mocap_easy"
+  dataset_path: "datasets/irs_rtvi_datasets_2021/mocap_easy"
   Calibration:
     raw:
       fx: 372.51
