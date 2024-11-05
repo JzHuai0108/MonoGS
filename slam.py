@@ -12,7 +12,7 @@ from munch import munchify
 import wandb
 from gaussian_splatting.scene.gaussian_model import GaussianModel
 from gaussian_splatting.utils.system_utils import mkdir_p
-from gui import gui_utils, slam_gui
+from gui import gui_utils
 from utils.config_utils import load_config
 from utils.dataset import load_dataset
 from utils.eval_utils import eval_ate, eval_rendering, save_gaussians
@@ -102,6 +102,7 @@ class SLAM:
 
         backend_process = mp.Process(target=self.backend.run)
         if self.use_gui:
+            from gui import slam_gui
             gui_process = mp.Process(target=slam_gui.run, args=(self.params_gui,))
             gui_process.start()
             time.sleep(5)
