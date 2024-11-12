@@ -29,13 +29,21 @@ from gaussian_splatting.utils.general_utils import (
 from gaussian_splatting.utils.graphics_utils import BasicPointCloud, getWorld2View2
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
+from utils.pose_utils import matrix_to_quaternion, quat_mult
+
+def get_scale(depth_prev, depth_curr):
+    # prev*scale = curr
+    depth_prev_2 = torch.sum(depth_prev * depth_prev)
+    depth_prev_curr = torch.sum(depth_prev * depth_curr)
+    scale  = depth_prev_curr / depth_prev_2
+    return scale
 
 
 class GaussianModel:
     def __init__(self, sh_degree: int, config=None):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree
-
+        self.device = "cuda"
         self._xyz = torch.empty(0, device="cuda")
         self._features_dc = torch.empty(0, device="cuda")
         self._features_rest = torch.empty(0, device="cuda")
@@ -49,6 +57,10 @@ class GaussianModel:
 
         self.unique_kfIDs = torch.empty(0).int()
         self.n_obs = torch.empty(0).int()
+        self._input_j = torch.empty(0).int() # pixel location of input depth [j, i]
+        self._input_i = torch.empty(0).int()
+        self._input_depth = torch.empty(0, device="cuda") # input depth at pixel locations
+        self._c2w_dict = {}  # the pose of camera at keyframes
 
         self.optimizer = None
 
@@ -86,6 +98,10 @@ class GaussianModel:
     @property
     def get_xyz(self):
         return self._xyz
+
+    @property
+    def pts_num(self):
+        return self._xyz.shape[0]
 
     @property
     def get_features(self):
@@ -208,6 +224,10 @@ class GaussianModel:
         return fused_point_cloud, features, scales, rots, opacities
 
     def create_masked_pcd_from_image(self, cam_info, depthmap=None, mask=None, init=False, scale=2.0):
+        """
+
+        mask: torch tensor (HW, 1)
+        """
         cam = cam_info
         image_ab = (torch.exp(cam.exposure_a)) * cam.original_image + cam.exposure_b
         image_ab = torch.clamp(image_ab, 0.0, 1.0)
@@ -277,14 +297,24 @@ class GaussianModel:
         scale_gaussian = depth_z / ((FX + FY)/2)
         mean3_sq_dist = scale_gaussian**2
 
+        # i will be the column index for each pixel, j will be the row index for each pixel
+        i_col, j_row = torch.meshgrid(torch.arange(width).int(),
+                                      torch.arange(height).int(),
+                                      indexing='xy')
+
         # Colorize point cloud
         cols = rgb.reshape(-1, 3) # (H, W, C) -> (H * W, C)
         point_cld = torch.cat((pts, cols), -1)
+        i_col = i_col.reshape(-1)
+        j_row = j_row.reshape(-1)
 
         # Select points based on mask
         if mask is not None:
             point_cld = point_cld[mask]
             mean3_sq_dist = mean3_sq_dist[mask]
+            i_col = i_col[mask]
+            j_row = j_row[mask]
+            depth_z = depth_z[mask]
 
         N = point_cld.size(0)
         num_points_to_keep = width * height // downsample_factor
@@ -292,6 +322,9 @@ class GaussianModel:
             indices = torch.randperm(N)[:num_points_to_keep]
             point_cld = point_cld[indices]
             mean3_sq_dist = mean3_sq_dist[indices]
+            i_col = i_col[indices]
+            j_row = j_row[indices]
+            depth_z = depth_z[indices]
             print('New gaussians with silhouette downsampled from {} to {}'.format(N, point_cld.size(0)))
         else:
             print('New gaussians with silhouette {}'.format(N))
@@ -338,13 +371,13 @@ class GaussianModel:
             )
         )
 
-        return fused_point_cloud, features, scales, rots, opacities
+        return fused_point_cloud, features, scales, rots, opacities, j_row, i_col, depth_z
 
     def init_lr(self, spatial_lr_scale):
         self.spatial_lr_scale = spatial_lr_scale
 
     def extend_from_pcd(
-        self, fused_point_cloud, features, scales, rots, opacities, kf_id
+        self, fused_point_cloud, features, scales, rots, opacities, kf_id, new_input_j, new_input_i, new_depth, c2w
     ):
         new_xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         new_features_dc = nn.Parameter(
@@ -366,24 +399,32 @@ class GaussianModel:
             new_opacity,
             new_scaling,
             new_rotation,
-            new_kf_ids=new_unique_kfIDs,
-            new_n_obs=new_n_obs,
+            new_unique_kfIDs,
+            new_n_obs,
+            new_input_j, new_input_i, new_depth, c2w
         )
+        return new_xyz.shape[0]
 
     def extend_from_pcd_seq(
         self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None, mask=None
     ):
+        # if mask is None:
+        #     fused_point_cloud, features, scales, rots, opacities = (
+        #         self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
+        #     )
+        # else:
         if mask is None:
-            fused_point_cloud, features, scales, rots, opacities = (
-                self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
-            )
-        else:
-            fused_point_cloud, features, scales, rots, opacities = (
-                self.create_masked_pcd_from_image(cam_info, depthmap, mask, init, scale=scale)
-            )
-        self.extend_from_pcd(
-            fused_point_cloud, features, scales, rots, opacities, kf_id
+            mask = depthmap > 0
+            mask = mask.reshape(-1)
+        fused_point_cloud, features, scales, rots, opacities, new_input_j, new_input_i, new_depth = (
+            self.create_masked_pcd_from_image(cam_info, depthmap, mask, init, scale=scale)
         )
+        c2w = cam_info.c2w()
+        new_pts = self.extend_from_pcd(
+            fused_point_cloud, features, scales, rots, opacities, kf_id, new_input_j, new_input_i,
+            new_depth, c2w
+        )
+        return new_pts
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -609,6 +650,10 @@ class GaussianModel:
         self.max_weight = torch.zeros((self._xyz.shape[0]), device="cuda")
         self.unique_kfIDs = torch.zeros((self._xyz.shape[0]))
         self.n_obs = torch.zeros((self._xyz.shape[0]), device="cpu").int()
+        self._input_j = torch.zeros((self._xyz.shape[0]), device="cpu").int()
+        self._input_i = torch.zeros((self._xyz.shape[0]), device="cpu").int()
+        self._input_depth = torch.zeros((self._xyz.shape[0]), device="cuda")
+
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
@@ -664,8 +709,13 @@ class GaussianModel:
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
         self.max_weight = self.max_weight[valid_points_mask]
-        self.unique_kfIDs = self.unique_kfIDs[valid_points_mask.cpu()]
-        self.n_obs = self.n_obs[valid_points_mask.cpu()]
+        mask_cpu = valid_points_mask.cpu()
+        self.unique_kfIDs = self.unique_kfIDs[mask_cpu]
+        self.n_obs = self.n_obs[mask_cpu]
+        self._input_j = self._input_j[mask_cpu]
+        self._input_i = self._input_i[mask_cpu]
+        self._input_depth = self._input_depth[mask_cpu]
+
 
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
@@ -709,8 +759,9 @@ class GaussianModel:
         new_opacities,
         new_scaling,
         new_rotation,
-        new_kf_ids=None,
-        new_n_obs=None,
+        new_kf_ids,
+        new_n_obs,
+        new_input_j, new_input_i, new_depth, c2w = None
     ):
         d = {
             "xyz": new_xyz,
@@ -736,10 +787,14 @@ class GaussianModel:
         max_weight = torch.zeros((new_xyz.shape[0]), device="cuda")
         self.max_weight = torch.cat((self.max_weight,max_weight),dim=0)
 
-        if new_kf_ids is not None:
-            self.unique_kfIDs = torch.cat((self.unique_kfIDs, new_kf_ids)).int()
-        if new_n_obs is not None:
-            self.n_obs = torch.cat((self.n_obs, new_n_obs)).int()
+        self.unique_kfIDs = torch.cat((self.unique_kfIDs, new_kf_ids)).int()
+        if c2w is not None:
+            self._c2w_dict[new_kf_ids[0].item()] = c2w
+        self.n_obs = torch.cat((self.n_obs, new_n_obs)).int()
+        self._input_j = torch.cat((self._input_j, new_input_j)).int()
+        self._input_i = torch.cat((self._input_i, new_input_i)).int()
+        self._input_depth = torch.cat((self._input_depth, new_depth))
+
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
@@ -770,6 +825,9 @@ class GaussianModel:
 
         new_kf_id = self.unique_kfIDs[selected_pts_mask.cpu()].repeat(N)
         new_n_obs = self.n_obs[selected_pts_mask.cpu()].repeat(N)
+        new_input_j = self._input_j[selected_pts_mask.cpu()].repeat(N)
+        new_input_i = self._input_i[selected_pts_mask.cpu()].repeat(N)
+        new_depth = self._input_depth[selected_pts_mask.cpu()].repeat(N)
 
         self.densification_postfix(
             new_xyz,
@@ -778,8 +836,9 @@ class GaussianModel:
             new_opacity,
             new_scaling,
             new_rotation,
-            new_kf_ids=new_kf_id,
-            new_n_obs=new_n_obs,
+            new_kf_id,
+            new_n_obs,
+            new_input_j, new_input_i, new_depth, c2w=None
         )
 
         prune_filter = torch.cat(
@@ -811,6 +870,10 @@ class GaussianModel:
 
         new_kf_id = self.unique_kfIDs[selected_pts_mask.cpu()]
         new_n_obs = self.n_obs[selected_pts_mask.cpu()]
+        new_input_j = self._input_j[selected_pts_mask.cpu()]
+        new_input_i = self._input_i[selected_pts_mask.cpu()]
+        new_depth = self._input_depth[selected_pts_mask.cpu()]
+
         self.densification_postfix(
             new_xyz,
             new_features_dc,
@@ -818,8 +881,9 @@ class GaussianModel:
             new_opacities,
             new_scaling,
             new_rotation,
-            new_kf_ids=new_kf_id,
-            new_n_obs=new_n_obs,
+            new_kf_id,
+            new_n_obs,
+            new_input_j, new_input_i, new_depth, c2w=None
         )
 
     def densify_and_prune(self, max_grad, max_grad_abs, min_opacity, extent, max_screen_size, use_abs_grad):
@@ -852,3 +916,71 @@ class GaussianModel:
         self.xyz_gradient_accum_abs[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, 2:], dim=-1,
                                                              keepdim=True)
         self.denom[update_filter] += 1
+
+    @torch.no_grad()
+    def update_points_pos(self,v_idx,depth,c2w,cfg):
+        '''
+        deform the Gaussians anchored to a keyframe given its updated depth and pose.
+        Refer to Splat-SLAM eq 12 and GLORIE-SLAM eq 3 and surrounding text.
+
+        Args:
+            v_idx (int): the index of the keyframe in depth_video
+            depth (tensor): depth map of that keyframe
+            c2w (tensor) : camera pose of that keyframe
+            cfg: config including camera parameters
+        '''
+
+        depth = depth.to(self.device)
+        input_video_idx = self.unique_kfIDs
+        input_j = self._input_j
+        input_i = self._input_i
+        input_depth_prev = self._input_depth
+        frame_mask = (input_video_idx==v_idx.item())
+        if frame_mask.sum() == 0:
+            return
+        points_j = input_j[frame_mask]
+        points_i = input_i[frame_mask]
+        points_depth_prev = input_depth_prev[frame_mask]
+        points_depth = depth[points_j, points_i]
+        mask_invalid_depth = (points_depth==0.0)
+        if mask_invalid_depth.sum() > 0:
+            scale = get_scale(points_depth_prev[~mask_invalid_depth], points_depth[~mask_invalid_depth])
+            points_depth[mask_invalid_depth] = scale * points_depth_prev[mask_invalid_depth]
+        c2w_prev = self._c2w_dict[v_idx.item()]
+        points_prev = self._xyz[frame_mask]
+        points_prev_homo = torch.cat([points_prev, torch.ones_like(points_prev[:, :1])], dim=1)
+        points_cam_prev = torch.linalg.inv(c2w_prev) @ points_prev_homo.T
+
+        # Extract the z-component of the camera coordinates
+        mu_z = points_cam_prev[2, :]
+
+        # Transform points back to world coordinates with the current c2w matrix
+        points_world = c2w @ points_cam_prev
+
+        # Calculate the stretch factor based on depth changes
+        stretch_factor = (1 + (points_depth - points_depth_prev) / mu_z)
+
+        # Update the positions in the world space and apply the stretch factor
+        new_xyz = self.get_xyz.clone()
+        new_xyz[frame_mask] = (stretch_factor * points_world)[:3, :].transpose(0, 1)
+        new_scaling = self.get_scaling.clone()
+        new_scaling[frame_mask] *= stretch_factor.unsqueeze(-1)
+
+        # Calculate the rotation change and update rotations for the points
+        delta_rot = c2w[:3, :3] @ c2w_prev[:3, :3].T
+        delta_quat = matrix_to_quaternion(delta_rot)
+
+        # Update the rotation for each point in the frame mask
+        new_rotations = self.get_rotation.clone()
+        for i in frame_mask.nonzero(as_tuple=True)[0]:
+            new_rotations[i] = quat_mult(delta_quat, self._rotation[i])
+
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_xyz, "xyz")
+        self._xyz = optimizable_tensors["xyz"]
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_scaling, "scaling")
+        self._scaling = optimizable_tensors["scaling"]
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_rotations, "rotation")
+        self._rotation = optimizable_tensors["rotation"]
+
+        self._c2w_dict[v_idx.item()] = c2w
+        self._input_depth[frame_mask] = points_depth.clone()

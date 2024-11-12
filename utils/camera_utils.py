@@ -22,9 +22,12 @@ class Camera(nn.Module):
         image_height,
         image_width,
         device="cuda:0",
+        kf_id=-1,
+        prior_mono_depth=None
     ):
         super(Camera, self).__init__()
         self.uid = uid
+        self.video_idx = kf_id
         self.device = device
 
         T = torch.eye(4, device=device)
@@ -33,8 +36,9 @@ class Camera(nn.Module):
         self.R_gt = gt_T[:3, :3]
         self.T_gt = gt_T[:3, 3]
 
-        self.original_image = color
-        self.depth = depth
+        self.original_image = color  # [C, H, W]
+        self.depth = depth # [H, W]
+        self.mono_depth = prior_mono_depth # unscaled prior depth from a monocular depth prediction network
         self.grad_mask = None
 
         self.fx = fx
@@ -108,8 +112,21 @@ class Camera(nn.Module):
         return self.world_view_transform.inverse()[3, :3]
 
     def update_RT(self, R, t):
+        """
+        R: world frame orientation relative to the camera frame.
+        t: world origin position in the camera frame.
+        """
         self.R = R.to(device=self.device)
         self.T = t.to(device=self.device)
+
+    def c2w(self):
+        """pose of the camera wrt the world frame"""
+        Rt = torch.zeros((4, 4), device=self.device)
+        Rt[:3, :3] = self.R
+        Rt[:3, 3] = self.T
+        Rt[3, 3] = 1.0
+        C2W = torch.linalg.inv(Rt)
+        return C2W
 
     def compute_grad_mask(self, config):
         edge_threshold = config["Training"]["edge_threshold"]

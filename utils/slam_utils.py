@@ -171,6 +171,44 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
     return alpha * img_loss + (1 - alpha) * depth_loss
 
 
+def get_loss_mapping3(config, render_image, render_depth, viewpoint, gt_image, gt_depth, initialization=False):
+    if initialization:
+        image_ab = render_image
+    else:
+        image_ab = (torch.exp(viewpoint.exposure_a)) * render_image + viewpoint.exposure_b
+
+    _, h, w = gt_image.shape
+    mask_shape = (1, h, w)
+    rgb_boundary_threshold = config["Training"]["rgb_boundary_threshold"]
+    rgb_pixel_mask = (gt_image.sum(dim=0) > rgb_boundary_threshold).view(*mask_shape)
+
+    diff_img = torch.abs(image_ab * rgb_pixel_mask - gt_image * rgb_pixel_mask)
+    _, ssim_map = ssim2(image_ab, gt_image)
+    diff_ssim = 1 - ssim_map
+    lambda_dssim = config["opt_params"]["lambda_dssim"]
+    diff_img = (1 - lambda_dssim) * diff_img + lambda_dssim * diff_ssim
+
+    if config["Training"]["monocular"]:
+        return diff_img.mean()
+
+    alpha = config["Training"]["alpha"] if "alpha" in config["Training"] else 0.95
+    depth_pixel_mask = torch.logical_and(gt_depth > 0.01, ~torch.isnan(render_depth)).view(*mask_shape)
+
+    eps = 1e-5
+    diff_depth = ((gt_depth - render_depth).abs() / (gt_depth + render_depth + eps)).clamp(0, 1)
+    weight_mask = 1 - diff_depth
+
+    l1_depth = torch.abs((render_depth - gt_depth) * depth_pixel_mask)
+    if "adaptive_image_w" in config["Training"] and config["Training"]["adaptive_image_w"]:
+        diff_img = diff_img * weight_mask
+    if "adaptive_depth_w" in config["Training"] and config["Training"]["adaptive_depth_w"]:
+        l1_depth = l1_depth * weight_mask
+
+    img_loss = diff_img.mean()
+    depth_loss = l1_depth.mean()
+    return alpha * img_loss + (1 - alpha) * depth_loss, depth_loss, img_loss, depth_pixel_mask
+
+
 def get_median_depth(depth, opacity=None, mask=None, return_std=False):
     depth = depth.detach().clone()
     opacity = opacity.detach()
