@@ -48,7 +48,7 @@ Training:
   single_thread: False
   spherical_harmonics: False
   use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
-  visibility_prune: True
+  visibility_prune: False
 
   lr:
     cam_rot_delta: 0.003

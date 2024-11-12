@@ -63,7 +63,7 @@ Training:
   single_thread: True
   spherical_harmonics: False
   use_abs_grad: True
-  visibility_prune: True
+  visibility_prune: False
 
   lr:
     cam_rot_delta: 0.003

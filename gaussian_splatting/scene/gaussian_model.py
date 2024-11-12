@@ -231,11 +231,10 @@ class GaussianModel:
         cam = cam_info
         image_ab = (torch.exp(cam.exposure_a)) * cam.original_image + cam.exposure_b
         image_ab = torch.clamp(image_ab, 0.0, 1.0)
-        rgb_raw = (image_ab * 255).byte().permute(1, 2, 0).contiguous()
+        rgb_raw = image_ab.permute(1, 2, 0).detach().contiguous()
 
         if depthmap is not None:
-            rgb = rgb_raw.type(torch.uint8)
-            depth_tensor = torch.from_numpy(depthmap.astype(np.float32)).to(device=rgb.device)
+            depth_tensor = torch.from_numpy(depthmap.astype(np.float32)).to(device=rgb_raw.device)
         else:
             depth_raw = cam.depth
             if depth_raw is None:
@@ -248,14 +247,12 @@ class GaussianModel:
                     * 0.05
                 ) * scale
 
-            rgb = rgb_raw.type(torch.uint8)
-            depth_tensor = torch.from_numpy(depth_raw.astype(np.float32)).to(device=rgb.device)
-
-        return self.create_masked_pcd_from_image_and_depth(cam, rgb, depth_tensor, mask, init)
+            depth_tensor = torch.from_numpy(depth_raw.astype(np.float32)).to(device=rgb_raw.device)
+        return self.create_masked_pcd_from_image_and_depth(cam, rgb_raw, depth_tensor, mask, init)
 
     def create_masked_pcd_from_image_and_depth(self, cam, rgb, depth, mask, init=False):
         """
-        rgb: torch.tensor (H, W, C)
+        rgb: torch.tensor (H, W, C) [0, 1]
         depth: torch.tensor (H, W)
         """
         if init:
