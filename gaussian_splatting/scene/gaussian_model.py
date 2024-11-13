@@ -890,21 +890,26 @@ class GaussianModel:
         grads_abs = self.xyz_gradient_accum_abs / self.denom
         grads_abs[grads_abs.isnan()] = 0.0
 
-        self.densify_and_clone(grads, max_grad, extent)
         if use_abs_grad:
+            self.densify_and_clone(grads_abs, max_grad_abs, extent)
             self.densify_and_split(grads_abs, max_grad_abs, extent)
         else:
+            self.densify_and_clone(grads, max_grad, extent)
             self.densify_and_split(grads, max_grad, extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-
+            a = prune_mask.sum()
+            b = big_points_vs.sum()
+            c = big_points_ws.sum()
             prune_mask = torch.logical_or(
                 torch.logical_or(prune_mask, big_points_vs), big_points_ws
             )
         self.prune_points(prune_mask)
+        aft_pts = self.pts_num
+        print(f'aft prune {aft_pts}: prune opacity {a}, big screen {b}, big extent {c}.')
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(
