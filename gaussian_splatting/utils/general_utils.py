@@ -18,7 +18,7 @@ import torch
 
 
 def inverse_sigmoid(x):
-    return torch.log(x / (1 - x))
+    return torch.log(x / (1 - x)) # Also known as logit of probability x.
 
 
 def PILtoTorch(pil_image, resolution):

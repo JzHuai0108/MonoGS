@@ -47,9 +47,9 @@ class GaussianModel:
         self._xyz = torch.empty(0, device="cuda")
         self._features_dc = torch.empty(0, device="cuda")
         self._features_rest = torch.empty(0, device="cuda")
-        self._scaling = torch.empty(0, device="cuda")
-        self._rotation = torch.empty(0, device="cuda")
-        self._opacity = torch.empty(0, device="cuda")
+        self._scaling = torch.empty(0, device="cuda") # log of scaling
+        self._rotation = torch.empty(0, device="cuda") # un-normalized quaternions wxyz
+        self._opacity = torch.empty(0, device="cuda") # logit of opacity
         self.max_radii2D = torch.empty(0, device="cuda")
         self.max_weight = torch.empty(0, device="cuda")
         self.xyz_gradient_accum = torch.empty(0, device="cuda")
@@ -967,6 +967,7 @@ class GaussianModel:
         new_xyz[frame_mask] = (stretch_factor * points_world)[:3, :].transpose(0, 1)
         new_scaling = self.get_scaling.clone()
         new_scaling[frame_mask] *= stretch_factor.unsqueeze(-1)
+        new_scaling = self.scaling_inverse_activation(new_scaling)
 
         # Calculate the rotation change and update rotations for the points
         delta_rot = c2w[:3, :3] @ c2w_prev[:3, :3].T
