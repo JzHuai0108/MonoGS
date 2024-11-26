@@ -205,7 +205,14 @@ class RRXIOParser:
             self.frames.append(frame)
 
 
-class VIVIDParser:
+class VIVIDPPParser:
+    """
+    The parser for the VIVID++ dataset processed by Huai.
+    The processing script is at https://github.com/JzHuai0108/NeRF-VO/blob/main/scripts/vivid_bag_to_folder.py
+    The sequences are undistorted, but rgb and thermal have different number of images,
+     and the per-pixel depth for thermal/RGB images are unavailable because we cannot deduce the corresponding relation from VIVID++.
+    Undistorted rgb images of resolution 640x480, thermal images of resolution 632x464.
+    """
     def __init__(self, input_folder, use_thermal, max_dt):
         self.input_folder = input_folder
         self.use_thermal = use_thermal
@@ -285,6 +292,70 @@ class VIVIDParser:
                 "transform_matrix": (np.linalg.inv(T)).tolist(),
             }
             self.frames.append(frame)
+
+
+class VIVIDParser:
+    """
+    parser for the vivid processed sequences processed by Shin.
+    downloaded from https://github.com/UkcheolShin/ThermalSfMLearner-MS
+    These sequences are undistorted, associated depth/rgb/thermal, have per pixel depth for thermal/RGB images,
+    rgb images of resolution 640x480, thermal images of resolution 640x512.
+    """
+    def __init__(self, input_folder, use_thermal):
+        self.input_folder = input_folder
+        self.use_thermal = use_thermal
+        self.load_poses(self.input_folder, frame_rate=32)
+        self.n_img = len(self.color_paths)
+
+    def parse_list(self, filepath, skiprows=0):
+        data = np.loadtxt(filepath, delimiter=" ", dtype=np.unicode_, skiprows=skiprows)
+        return data
+
+    def get_files(self, folder, ext):
+        """
+        Retrieve all files in a given folder with the specified extension, sorted by filename.
+
+        Args:
+            folder (str): Path to the folder.
+            ext (str): File extension to look for (e.g., ".txt", ".png").
+
+        Returns:
+            list: Sorted list of file paths with the specified extension.
+        """
+        if not os.path.isdir(folder):
+            raise ValueError(f"The folder '{folder}' does not exist or is not a directory.")
+        if not ext.startswith("."):
+            ext = f".{ext}"  # Ensure the extension starts with a dot
+        files = [
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if os.path.isfile(os.path.join(folder, f)) and f.lower().endswith(ext.lower())
+        ]
+        # Sort files naturally (e.g., "0001.npy", "0002.npy")
+        files.sort(key=lambda x: os.path.basename(x))
+        return files
+
+    def load_poses(self, datapath, frame_rate=-1):
+        if self.use_thermal:
+            pose_list = os.path.join(self.input_folder, 'poses_thermal.txt')
+            image_dir = os.path.join(self.input_folder, 'Thermal/data')
+            depth_dir = os.path.join(self.input_folder, 'Warped_Depth/data_THERMAL')
+        else:
+            pose_list = os.path.join(self.input_folder, 'poses_RGB.txt')
+            image_dir = os.path.join(self.input_folder, 'RGB/data')
+            depth_dir = os.path.join(self.input_folder, 'Warped_Depth/data_RGB')
+
+        image_data = self.get_files(image_dir, '.png')
+        depth_data = self.get_files(depth_dir, '.npy')
+        pose_data = self.parse_list(pose_list, skiprows=0)
+        pose_data.reshape(-1, 3, 4)
+
+        print('Found {} images, {} depth images, and {} poses'.format(
+                len(image_data), len(depth_data), len(pose_data)))
+
+        self.color_paths = image_data
+        self.poses = [np.vstack((T, np.zeros((1, 4)))) for T in pose_data]
+        self.depth_paths = depth_data
 
 
 class EuRoCParser:
@@ -698,7 +769,7 @@ class VIVIDDataset(MonocularDataset):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
         use_thermal = config['Dataset']['modality'] == 'thermal'
-        parser = VIVIDParser(dataset_path, use_thermal, 0.3)
+        parser = VIVIDParser(dataset_path, use_thermal)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
         self.depth_paths = parser.depth_paths

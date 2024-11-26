@@ -1,0 +1,20 @@
+inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
+
+Dataset:
+  modality: 'visual'
+
+  dataset_path: "datasets/vividpp/outdoor_robust_day1"
+  Calibration:
+    fx: 530.89678934
+    fy: 532.74953425
+    cx: 323.86088462
+    cy: 239.91265484
+    k1: 0.0
+    k2: 0.0
+    k3: 0.0
+    k4: 0.0
+    width: 640
+    height: 480
+    depth_scale: 1000.0
+    distorted: False
+    distortion_model: ''

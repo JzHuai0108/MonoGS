@@ -1,0 +1,20 @@
+inherit_from: "thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
+
+Dataset:
+  modality: 'thermal'
+
+  dataset_path: "datasets/vividpp/outdoor_robust_day1"
+  Calibration:
+    fx: 327.40890654
+    fy: 328.90888448
+    cx: 317.55620197
+    cy: 231.37528736
+    k1: 0.0
+    k2: 0.0
+    k3: 0.0
+    k4: 0.0
+    width: 632
+    height: 464
+    depth_scale: 1000.0
+    distorted: False
+    distortion_model: ''

@@ -8,7 +8,7 @@ Results:
   use_wandb: True
 
 Dataset:
-  type: 'tum'
+  type: 'vividpp'
   sensor_type: 'monocular'
   pcd_downsample: 64
   pcd_downsample_init: 32
@@ -19,10 +19,10 @@ Training:
   adaptive_depth_w: False
   adaptive_image_w: False # better keep this False as it can cause unstable training.
   init_itr_num: 1050
-  init_gaussian_update: 200
+  init_gaussian_update: 100
   init_gaussian_reset: 500
   init_gaussian_th: 0.005
-  init_gaussian_extent: 30.0
+  init_gaussian_extent: 30
   tracking_itr_num: 100
   mapping_itr_num: 150
   gaussian_update_every: 150
@@ -74,7 +74,6 @@ opt_params:
   densify_grad_abs_threshold: 0.002
   enable_weight_prune: False
   min_weight: 0.7
-
 
 model_params:
   sh_degree: 0

@@ -961,6 +961,11 @@ class GaussianModel:
 
         # Calculate the stretch factor based on depth changes
         stretch_factor = (1 + (points_depth - points_depth_prev) / mu_z)
+        print(f'stretch factor min: {stretch_factor.min().item()} '
+              f'max: {stretch_factor.max().item()} '
+              f'median: {stretch_factor.median().item()}')
+        stretch_mask = (stretch_factor < 0.2) | (stretch_factor > 5)
+        stretch_factor[stretch_mask] = 1.0
 
         # Update the positions in the world space and apply the stretch factor
         new_xyz = self.get_xyz.clone()
@@ -976,7 +981,7 @@ class GaussianModel:
         # Update the rotation for each point in the frame mask
         new_rotations = self.get_rotation.clone()
         for i in frame_mask.nonzero(as_tuple=True)[0]:
-            new_rotations[i] = quat_mult(delta_quat, self._rotation[i])
+            new_rotations[i] = quat_mult(delta_quat, new_rotations[i])
 
         optimizable_tensors = self.replace_tensor_to_optimizer(new_xyz, "xyz")
         self._xyz = optimizable_tensors["xyz"]
