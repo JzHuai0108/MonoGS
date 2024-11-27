@@ -1,9 +1,9 @@
-inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/vivid/base_config.yaml"
+inherit_from: "thirdparty/MonoGS/configs/mono/vivid/base_config.yaml"
 
 Dataset:
-  modality: 'visual'
+  modality: 'RGB'
 
-  dataset_path: "datasets/VIVID/outdoor_robust_day1"
+  dataset_path: "datasets/VIVID_256/indoor_robust_varying"
   Calibration:
     fx: 2.655393855360252360e+02
     fy: 2.831616186282873855e+02
@@ -15,6 +15,6 @@ Dataset:
     k4: 0.0
     width: 320
     height: 256
-    depth_scale: 1000.0
+    depth_scale: 1.0
     distorted: False
     distortion_model: ''

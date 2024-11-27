@@ -1,9 +1,9 @@
 inherit_from: "thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
 
 Dataset:
-  modality: 'thermal'
+  modality: 'Thermal_fs'
 
-  dataset_path: "datasets/vividpp/outdoor_robust_day1"
+  dataset_path: "datasets/vividpp/varying_robust"
   Calibration:
     fx: 327.40890654
     fy: 328.90888448

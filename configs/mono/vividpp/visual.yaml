@@ -1,9 +1,9 @@
-inherit_from: "nerf_vo/thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
+inherit_from: "thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
 
 Dataset:
-  modality: 'visual'
+  modality: 'RGB'
 
-  dataset_path: "datasets/vividpp/outdoor_robust_day1"
+  dataset_path: "datasets/vividpp/varying_robust"
   Calibration:
     fx: 530.89678934
     fy: 532.74953425

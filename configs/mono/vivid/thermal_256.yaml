@@ -1,9 +1,9 @@
 inherit_from: "thirdparty/MonoGS/configs/mono/vivid/base_config.yaml"
 
 Dataset:
-  modality: 'thermal'
+  modality: 'Thermal'
 
-  dataset_path: "datasets/VIVID/outdoor_robust_day1"
+  dataset_path: "datasets/VIVID_256/indoor_robust_varying"
   Calibration:
     fx: 2.186943054162831857e+02
     fy: 2.186473787288545338e+02
@@ -15,6 +15,6 @@ Dataset:
     k4: 0.0
     width: 320
     height: 256
-    depth_scale: 1000.0
+    depth_scale: 1.0
     distorted: False
     distortion_model: ''

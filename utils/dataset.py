@@ -123,9 +123,9 @@ class TUMParser:
 
 
 class RRXIOParser:
-    def __init__(self, input_folder, use_thermal, max_dt):
+    def __init__(self, input_folder, modality, max_dt):
         self.input_folder = input_folder
-        self.use_thermal = use_thermal
+        self.modality = modality
         self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -153,12 +153,12 @@ class RRXIOParser:
         return associations
 
     def load_poses(self, datapath, max_dt, frame_rate=-1):
-        if self.use_thermal:
+        if 'thermal' in self.modality.lower():
             if os.path.isfile(os.path.join(self.input_folder, 'gt_thermal.txt')):
                 pose_list = os.path.join(self.input_folder, 'gt_thermal.txt')
             image_list = os.path.join(self.input_folder, 'thermal.txt')
             depth_list = os.path.join(self.input_folder, 'radart.txt')
-        else:
+        elif ('visual' in self.modality.lower()) or ('RGB' in self.modality):
             if os.path.isfile(os.path.join(self.input_folder, 'gt_visual.txt')):
                 pose_list = os.path.join(self.input_folder, 'gt_visual.txt')
             image_list = os.path.join(self.input_folder, 'visual.txt')
@@ -213,9 +213,9 @@ class VIVIDPPParser:
      and the per-pixel depth for thermal/RGB images are unavailable because we cannot deduce the corresponding relation from VIVID++.
     Undistorted rgb images of resolution 640x480, thermal images of resolution 632x464.
     """
-    def __init__(self, input_folder, use_thermal, max_dt):
+    def __init__(self, input_folder, modality, max_dt):
         self.input_folder = input_folder
-        self.use_thermal = use_thermal
+        self.modality = modality
         self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -239,20 +239,17 @@ class VIVIDPPParser:
                     np.abs(tstamp_pose[k] - t) < max_dt
                 ):
                     associations.append((i, j, k))
-
         return associations
 
     def load_poses(self, datapath, max_dt, frame_rate=-1):
-        if self.use_thermal:
-            if os.path.isfile(os.path.join(self.input_folder, 'gt_thermal.txt')):
-                pose_list = os.path.join(self.input_folder, 'gt_thermal.txt')
-            image_list = os.path.join(self.input_folder, 'thermal.txt')
-            depth_list = os.path.join(self.input_folder, 'depth.txt')
-        else:
-            if os.path.isfile(os.path.join(self.input_folder, 'gt_visual.txt')):
-                pose_list = os.path.join(self.input_folder, 'gt_visual.txt')
-            image_list = os.path.join(self.input_folder, 'visual.txt')
-            depth_list = os.path.join(self.input_folder, 'depth.txt')
+        if 'thermal' in self.modality.lower():
+            pose_list = os.path.join(self.input_folder, 'poses_thermal.txt')
+            image_list = os.path.join(self.input_folder, self.modality + '.txt')
+            depth_list = os.path.join(self.input_folder, 'Depth.txt')
+        elif 'RGB' in self.modality:
+            pose_list = os.path.join(self.input_folder, 'poses_RGB.txt')
+            image_list = os.path.join(self.input_folder, self.modality + '.txt')
+            depth_list = os.path.join(self.input_folder, 'Depth.txt')
 
         image_data = self.parse_list(image_list)
         depth_data = self.parse_list(depth_list)
@@ -301,9 +298,9 @@ class VIVIDParser:
     These sequences are undistorted, associated depth/rgb/thermal, have per pixel depth for thermal/RGB images,
     rgb images of resolution 640x480, thermal images of resolution 640x512.
     """
-    def __init__(self, input_folder, use_thermal):
+    def __init__(self, input_folder, modality):
         self.input_folder = input_folder
-        self.use_thermal = use_thermal
+        self.modality = modality
         self.load_poses(self.input_folder, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -336,25 +333,36 @@ class VIVIDParser:
         return files
 
     def load_poses(self, datapath, frame_rate=-1):
-        if self.use_thermal:
+        if 'thermal' in self.modality.lower():
             pose_list = os.path.join(self.input_folder, 'poses_thermal.txt')
-            image_dir = os.path.join(self.input_folder, 'Thermal/data')
+            image_dir = os.path.join(self.input_folder, self.modality, 'data')
             depth_dir = os.path.join(self.input_folder, 'Warped_Depth/data_THERMAL')
-        else:
+            if not os.path.isdir(image_dir): # VIVID_256 preprocessed by Shin's bash script
+                print('Info: assuming VIVID_256 format')
+                image_dir = os.path.join(self.input_folder, self.modality)
+                pose_list = os.path.join(self.input_folder, "poses_T.txt")
+                depth_dir = os.path.join(self.input_folder, "Depth_T")
+        elif 'RGB' in self.modality:
             pose_list = os.path.join(self.input_folder, 'poses_RGB.txt')
-            image_dir = os.path.join(self.input_folder, 'RGB/data')
+            image_dir = os.path.join(self.input_folder, self.modality, 'data')
             depth_dir = os.path.join(self.input_folder, 'Warped_Depth/data_RGB')
+            if not os.path.isdir(image_dir): # VIVID_256 preprocessed by Shin's bash script
+                print('Info: assuming VIVID_256 format')
+                image_dir = os.path.join(self.input_folder, self.modality)
+                pose_list = os.path.join(self.input_folder, "poses_RGB.txt")
+                depth_dir = os.path.join(self.input_folder, "Depth_RGB")
 
         image_data = self.get_files(image_dir, '.png')
         depth_data = self.get_files(depth_dir, '.npy')
         pose_data = self.parse_list(pose_list, skiprows=0)
-        pose_data.reshape(-1, 3, 4)
+        pose_vecs = pose_data[:, 0:].astype(np.float64)
+        pose_list = pose_vecs.reshape(-1, 3, 4)
 
         print('Found {} images, {} depth images, and {} poses'.format(
-                len(image_data), len(depth_data), len(pose_data)))
+                len(image_data), len(depth_data), len(pose_list)))
 
         self.color_paths = image_data
-        self.poses = [np.vstack((T, np.zeros((1, 4)))) for T in pose_data]
+        self.poses = [np.vstack((T, np.zeros((1, 4)))) for T in pose_list]
         self.depth_paths = depth_data
 
 
@@ -549,9 +557,12 @@ class MonocularDataset(BaseDataset):
         depth = None
         if self.has_depth:
             depth_path = self.depth_paths[idx]
-            depth = np.array(Image.open(depth_path)) / self.depth_scale
-            if self.map1x is not None:
-                depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_NEAREST)
+            if depth_path.endswith('.npy'):
+                depth = np.load(depth_path)
+            else:
+                depth = np.array(Image.open(depth_path)) / self.depth_scale
+                if self.map1x is not None:
+                    depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_NEAREST)
 
         image = (
             torch.from_numpy(image / 255.0)
@@ -745,8 +756,8 @@ class RRXIODataset(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
-        use_thermal = config['Dataset']['modality'] == 'thermal'
-        parser = RRXIOParser(dataset_path, use_thermal, 0.08)
+        modality = config['Dataset']['modality']
+        parser = RRXIOParser(dataset_path, modality, 0.08)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
         self.depth_paths = parser.depth_paths
@@ -768,8 +779,20 @@ class VIVIDDataset(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
-        use_thermal = config['Dataset']['modality'] == 'thermal'
-        parser = VIVIDParser(dataset_path, use_thermal)
+        modality = config['Dataset']['modality']
+        parser = VIVIDParser(dataset_path, modality)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+        self.poses = parser.poses
+
+
+class VIVIDPPDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        modality = config['Dataset']['modality']
+        parser = VIVIDPPParser(dataset_path, modality, max_dt = 0.2)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
         self.depth_paths = parser.depth_paths
@@ -893,5 +916,7 @@ def load_dataset(args, path, config):
         return RRXIODataset(args, path, config)
     elif config["Dataset"]["type"] == "vivid":
         return VIVIDDataset(args, path, config)
+    elif config["Dataset"]["type"] == "vividpp":
+        return VIVIDPPDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
