@@ -5,7 +5,7 @@ import os
 import cv2
 import numpy as np
 import torch
-import trimesh
+from scipy.spatial.transform import Rotation
 from PIL import Image
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
@@ -15,6 +15,12 @@ try:
 except Exception:
     pass
 
+def pose_matrix_from_pq(pq):
+    """ get the 4x4 pose matrix from (p, q) """
+    pose = np.eye(4)
+    pose[:3, :3] = Rotation.from_quat(pq[3:]).as_matrix()
+    pose[:3, 3] = pq[:3]
+    return pose
 
 class ReplicaParser:
     def __init__(self, input_folder):
@@ -22,10 +28,13 @@ class ReplicaParser:
         self.color_paths = sorted(glob.glob(f"{self.input_folder}/results/frame*.jpg"))
         self.depth_paths = sorted(glob.glob(f"{self.input_folder}/results/depth*.png"))
         self.n_img = len(self.color_paths)
+        self.poses = [] # poses of the world frame relative to the camera frame
+        self.world_poses = [] # poses of the camera frame relative to the world frame
         self.load_poses(f"{self.input_folder}/traj.txt")
 
     def load_poses(self, path):
         self.poses = []
+        self.world_poses = []
         with open(path, "r") as f:
             lines = f.readlines()
 
@@ -33,6 +42,7 @@ class ReplicaParser:
         for i in range(self.n_img):
             line = lines[i]
             pose = np.array(list(map(float, line.split()))).reshape(4, 4)
+            self.world_poses.append(pose)
             pose = np.linalg.inv(pose)
             self.poses.append(pose)
             frame = {
@@ -48,6 +58,8 @@ class ReplicaParser:
 class TUMParser:
     def __init__(self, input_folder):
         self.input_folder = input_folder
+        self.poses = []
+        self.world_poses = []
         self.load_poses(self.input_folder, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -109,8 +121,8 @@ class TUMParser:
 
             quat = pose_vecs[k][4:]
             trans = pose_vecs[k][1:4]
-            T = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
-            T[:3, 3] = trans
+            T = pose_matrix_from_pq(pose_vecs[k][1:8])
+            self.world_poses.append(T)
             self.poses += [np.linalg.inv(T)]
 
             frame = {
@@ -126,6 +138,8 @@ class RRXIOParser:
     def __init__(self, input_folder, modality, max_dt):
         self.input_folder = input_folder
         self.modality = modality
+        self.poses = []
+        self.world_poses = []
         self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -190,10 +204,8 @@ class RRXIOParser:
             self.color_paths += [os.path.join(datapath, image_data[i, 1])]
             self.depth_paths += [os.path.join(datapath, depth_data[j, 1])]
 
-            quat = pose_vecs[k][4:]
-            trans = pose_vecs[k][1:4]
-            T = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
-            T[:3, 3] = trans
+            T = pose_matrix_from_pq(pose_vecs[k][1:8])
+            self.world_poses.append(T)
             self.poses += [np.linalg.inv(T)]
 
             frame = {
@@ -216,6 +228,8 @@ class VIVIDPPParser:
     def __init__(self, input_folder, modality, max_dt):
         self.input_folder = input_folder
         self.modality = modality
+        self.poses = []
+        self.world_poses = []
         self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -277,10 +291,8 @@ class VIVIDPPParser:
             self.color_paths += [os.path.join(datapath, image_data[i, 1])]
             self.depth_paths += [os.path.join(datapath, depth_data[j, 1])]
 
-            quat = pose_vecs[k][4:]
-            trans = pose_vecs[k][1:4]
-            T = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
-            T[:3, 3] = trans
+            T = pose_matrix_from_pq(pose_vecs[k][1:8])
+            self.world_poses.append(T)
             self.poses += [np.linalg.inv(T)]
 
             frame = {
@@ -301,6 +313,8 @@ class VIVIDParser:
     def __init__(self, input_folder, modality):
         self.input_folder = input_folder
         self.modality = modality
+        self.poses = []
+        self.world_poses = []
         self.load_poses(self.input_folder, frame_rate=32)
         self.n_img = len(self.color_paths)
 
@@ -362,7 +376,8 @@ class VIVIDParser:
                 len(image_data), len(depth_data), len(pose_list)))
 
         self.color_paths = image_data
-        self.poses = [np.vstack((T, np.zeros((1, 4)))) for T in pose_list]
+        self.world_poses = [np.vstack((T, [0, 0, 0, 1])) for T in pose_list]
+        self.poses = [np.linalg.inv(np.vstack((T, [0, 0, 0, 1]))) for T in pose_list]
         self.depth_paths = depth_data
 
 
@@ -380,6 +395,8 @@ class EuRoCParser:
         self.color_paths = self.color_paths[start_idx:]
         self.color_paths_r = self.color_paths_r[start_idx:]
         self.n_img = len(self.color_paths)
+        self.poses = []
+        self.world_poses = []
         self.load_poses(
             f"{self.input_folder}/mav0/state_groundtruth_estimate0/data.csv"
         )
@@ -417,12 +434,9 @@ class EuRoCParser:
             trans = data[pose_indices[i], 1:4]
             quat = data[pose_indices[i], 4:8]
             quat = quat[[1, 2, 3, 0]]
-            
-            
-            T_w_i = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
-            T_w_i[:3, 3] = trans
+            T_w_i = pose_matrix_from_pq(np.hstack((trans, quat)))
             T_w_c = np.dot(T_w_i, T_i_c0)
-
+            self.world_poses.append(T_w_c)
             self.poses += [np.linalg.inv(T_w_c)]
 
             frame = {
