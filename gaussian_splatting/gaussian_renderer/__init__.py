@@ -29,6 +29,8 @@ def render(
     scaling_modifier=1.0,
     override_color=None,
     mask=None,
+    render_height=None,
+    render_width=None,
 ):
     """
     Render the scene.
@@ -50,9 +52,13 @@ def render(
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
+    if render_height is None:
+        render_width = int(viewpoint_camera.image_width)
+        render_height = int(viewpoint_camera.image_height)
+
     raster_settings = GaussianRasterizationSettings(
-        image_height=int(viewpoint_camera.image_height),
-        image_width=int(viewpoint_camera.image_width),
+        image_height=render_height,
+        image_width=render_width,
         tanfovx=tanfovx,
         tanfovy=tanfovy,
         bg=bg_color,

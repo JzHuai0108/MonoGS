@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+import cv2
 from gaussian_splatting.utils.graphics_utils import getProjectionMatrix2, getWorld2View2
 from utils.slam_utils import image_gradient, image_gradient_mask
 
@@ -65,6 +66,13 @@ class Camera(nn.Module):
         )
 
         self.projection_matrix = projection_matrix.to(device=device)
+        # Pyramid training member variables
+        self.pyramid_original_image = [] # levels of down-sampled image of the original image, the first one has the lowest resolution.
+        self.pyramid_times_of_use = [] # a list of integers
+        self.num_pyramid_sub_levels = 0 # total number of levels in the pyramid
+        self.pyramid_width = [] # widths of pyramid levels
+        self.pyramid_height = [] # heights of pyramid levels
+        self.remaining_times_of_use = 0
 
     @staticmethod
     def init_from_dataset(dataset, idx, projection_matrix):
@@ -169,3 +177,27 @@ class Camera(nn.Module):
 
         self.exposure_a = None
         self.exposure_b = None
+
+    # Pyramid training methods
+    def get_current_pyramid_level(self):
+        for i in range(len(self.pyramid_times_of_use)):
+            if self.pyramid_times_of_use[i] > 0:
+                self.pyramid_times_of_use[i] -= 1
+                return i
+        # If all sub-levels have been used up
+        return self.num_pyramid_sub_levels
+
+    def build_pyramid(self, num_pyramid_sub_levels, pyramid_times_of_use,
+                    pyramid_height, pyramid_width):
+        self.num_pyramid_sub_levels = num_pyramid_sub_levels
+        self.pyramid_times_of_use = pyramid_times_of_use
+        self.pyramid_height = pyramid_height
+        self.pyramid_width = pyramid_width
+        # Assuming original_image is in [C, H, W] format and values in [0, 1]
+        np_image = self.original_image.permute(1, 2, 0).cpu().numpy()  # Convert [C, H, W] -> [H, W, C] and NumPy
+        self.pyramid_original_image = [
+            torch.tensor(cv2.resize(np_image,(self.pyramid_width[l], self.pyramid_height[l]))).permute(2, 0, 1)  # Convert back to [C, H, W]
+            for l in range(self.num_pyramid_sub_levels)]
+
+    def increase_times_of_use(self, newlife):
+        self.remaining_times_of_use += newlife
