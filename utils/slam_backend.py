@@ -10,7 +10,7 @@ from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
-from utils.slam_utils import get_loss_mapping2, get_depth_and_silhouette
+from utils.slam_utils import get_loss_mapping, get_depth_and_silhouette
 
 
 class BackEnd(mp.Process):
@@ -134,7 +134,7 @@ class BackEnd(mp.Process):
                 render_pkg["opacity"],
                 render_pkg["n_touched"],
             )
-            loss_init = get_loss_mapping2(
+            loss_init = get_loss_mapping(
                 self.config, image, depth, viewpoint, opacity, initialization=True
             )
             loss_init.backward()
@@ -224,7 +224,7 @@ class BackEnd(mp.Process):
                     render_pkg["n_touched"],
                 )
 
-                loss_mapping += get_loss_mapping2(
+                loss_mapping += get_loss_mapping(
                     self.config, image, depth, viewpoint, opacity
                 )
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
@@ -255,7 +255,7 @@ class BackEnd(mp.Process):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
-                loss_mapping += get_loss_mapping2(
+                loss_mapping += get_loss_mapping(
                     self.config, image, depth, viewpoint, opacity
                 )
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
@@ -328,8 +328,8 @@ class BackEnd(mp.Process):
                     == self.gaussian_update_offset
                 )
                 if update_gaussian:
-                    Log("Densifying the Gaussians at frame {} iter {} kfidx {}".format(
-                        self.viewpoints[self.current_window[0]].uid, self.iteration_count, current_window[0]))
+                    # Log("Densifying the Gaussians at frame {} iter {} kfidx {}".format(
+                    #     self.viewpoints[self.current_window[0]].uid, self.iteration_count, current_window[0]))
                     self.gaussians.densify_and_prune(
                         self.opt_params.densify_grad_threshold,
                         self.opt_params.densify_grad_abs_threshold,

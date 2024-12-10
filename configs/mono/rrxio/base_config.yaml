@@ -5,7 +5,7 @@ Results:
   save_trj_kf_intv: 10
   use_gui: True
   eval_rendering: False
-  use_wandb: True
+  use_wandb: False
 
 Dataset:
   type: 'rrxio'
@@ -41,13 +41,13 @@ Training:
   kf_min_translation: 0.05
   kf_overlap: 0.9
   kf_cutoff: 0.3
-  new_gaussians_by_sil: True
+  new_gaussians_by_sil: False
   sil_thres: 0.5
   prune_mode: 'slam'
-  scales_by_monogs: False
-  single_thread: False
+  scales_by_monogs: True
+  single_thread: True
   spherical_harmonics: False
-  use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
+  use_abs_grad: False # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
   visibility_prune: False
 
   lr:
@@ -64,7 +64,7 @@ opt_params:
   opacity_lr: 0.05
   scaling_lr: 0.001
   rotation_lr: 0.001
-  percent_dense: 0.001
+  percent_dense: 0.01
   lambda_dssim: 0.2
   densification_interval: 100
   opacity_reset_interval: 3000

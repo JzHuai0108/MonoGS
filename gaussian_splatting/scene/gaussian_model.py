@@ -181,7 +181,7 @@ class GaussianModel:
         N = len(pcd_tmp.points)
         pcd_tmp = pcd_tmp.random_down_sample(1.0 / downsample_factor)
         dN = len(pcd_tmp.points)
-        print('New gaussians downsampled from {} to {}'.format(N, dN))
+        # print('New gaussians downsampled from {} to {}'.format(N, dN))
         new_xyz = np.asarray(pcd_tmp.points)
         new_rgb = np.asarray(pcd_tmp.colors)
 
@@ -373,7 +373,7 @@ class GaussianModel:
         self.spatial_lr_scale = spatial_lr_scale
 
     def extend_from_pcd(
-        self, fused_point_cloud, features, scales, rots, opacities, kf_id, new_input_j, new_input_i, new_depth, c2w
+        self, fused_point_cloud, features, scales, rots, opacities, kf_id
     ):
         new_xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         new_features_dc = nn.Parameter(
@@ -396,30 +396,17 @@ class GaussianModel:
             new_scaling,
             new_rotation,
             new_unique_kfIDs,
-            new_n_obs,
-            new_input_j, new_input_i, new_depth, c2w
+            new_n_obs
         )
         return new_xyz.shape[0]
 
     def extend_from_pcd_seq(
         self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None, mask=None
     ):
-        # if mask is None:
-        #     fused_point_cloud, features, scales, rots, opacities = (
-        #         self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
-        #     )
-        # else:
-        if mask is None:
-            mask = depthmap > 0
-            mask = mask.reshape(-1)
-        fused_point_cloud, features, scales, rots, opacities, new_input_j, new_input_i, new_depth = (
-            self.create_masked_pcd_from_image(cam_info, depthmap, mask, init, scale=scale)
+        fused_point_cloud, features, scales, rots, opacities = (
+            self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
         )
-        c2w = cam_info.c2w()
-        new_pts = self.extend_from_pcd(
-            fused_point_cloud, features, scales, rots, opacities, kf_id, new_input_j, new_input_i,
-            new_depth, c2w
-        )
+        new_pts = self.extend_from_pcd(fused_point_cloud, features, scales, rots, opacities, kf_id)
         return new_pts
 
     def training_setup(self, training_args):
@@ -451,7 +438,7 @@ class GaussianModel:
             },
             {
                 "params": [self._scaling],
-                "lr": training_args.scaling_lr,
+                "lr": training_args.scaling_lr * self.spatial_lr_scale,
                 "name": "scaling",
             },
             {
@@ -709,9 +696,6 @@ class GaussianModel:
         mask_cpu = valid_points_mask.cpu()
         self.unique_kfIDs = self.unique_kfIDs[mask_cpu]
         self.n_obs = self.n_obs[mask_cpu]
-        self._input_j = self._input_j[mask_cpu]
-        self._input_i = self._input_i[mask_cpu]
-        self._input_depth = self._input_depth[mask_cpu]
 
 
     def cat_tensors_to_optimizer(self, tensors_dict):
@@ -757,8 +741,7 @@ class GaussianModel:
         new_scaling,
         new_rotation,
         new_kf_ids,
-        new_n_obs,
-        new_input_j, new_input_i, new_depth, c2w = None
+        new_n_obs
     ):
         d = {
             "xyz": new_xyz,
@@ -785,12 +768,7 @@ class GaussianModel:
         self.max_weight = torch.cat((self.max_weight,max_weight),dim=0)
 
         self.unique_kfIDs = torch.cat((self.unique_kfIDs, new_kf_ids)).int()
-        if c2w is not None:
-            self._c2w_dict[new_kf_ids[0].item()] = c2w
         self.n_obs = torch.cat((self.n_obs, new_n_obs)).int()
-        self._input_j = torch.cat((self._input_j, new_input_j)).int()
-        self._input_i = torch.cat((self._input_i, new_input_i)).int()
-        self._input_depth = torch.cat((self._input_depth, new_depth))
 
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
@@ -822,9 +800,6 @@ class GaussianModel:
 
         new_kf_id = self.unique_kfIDs[selected_pts_mask.cpu()].repeat(N)
         new_n_obs = self.n_obs[selected_pts_mask.cpu()].repeat(N)
-        new_input_j = self._input_j[selected_pts_mask.cpu()].repeat(N)
-        new_input_i = self._input_i[selected_pts_mask.cpu()].repeat(N)
-        new_depth = self._input_depth[selected_pts_mask.cpu()].repeat(N)
 
         self.densification_postfix(
             new_xyz,
@@ -835,7 +810,6 @@ class GaussianModel:
             new_rotation,
             new_kf_id,
             new_n_obs,
-            new_input_j, new_input_i, new_depth, c2w=None
         )
 
         prune_filter = torch.cat(
@@ -867,9 +841,6 @@ class GaussianModel:
 
         new_kf_id = self.unique_kfIDs[selected_pts_mask.cpu()]
         new_n_obs = self.n_obs[selected_pts_mask.cpu()]
-        new_input_j = self._input_j[selected_pts_mask.cpu()]
-        new_input_i = self._input_i[selected_pts_mask.cpu()]
-        new_depth = self._input_depth[selected_pts_mask.cpu()]
 
         self.densification_postfix(
             new_xyz,
@@ -880,7 +851,6 @@ class GaussianModel:
             new_rotation,
             new_kf_id,
             new_n_obs,
-            new_input_j, new_input_i, new_depth, c2w=None
         )
 
     def densify_and_prune(self, max_grad, max_grad_abs, min_opacity, extent, max_screen_size, use_abs_grad):
@@ -910,7 +880,7 @@ class GaussianModel:
             )
         self.prune_points(prune_mask)
         aft_pts = self.pts_num
-        print(f'aft prune {aft_pts}: prune opacity {a}, big screen {b}, big extent {c}.')
+        # print(f'aft prune {aft_pts}: prune opacity {a}, big screen {b}, big extent {c}.')
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(

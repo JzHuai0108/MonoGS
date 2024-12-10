@@ -1,4 +1,4 @@
-inherit_from: "thirdparty/MonoGS/configs/mono/vivid/base_config.yaml"
+inherit_from: "configs/mono/vivid/base_config.yaml"
 
 Dataset:
   modality: 'RGB'

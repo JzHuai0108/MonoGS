@@ -1,4 +1,4 @@
-inherit_from: "thirdparty/MonoGS/configs/mono/vividpp/base_config.yaml"
+inherit_from: "configs/mono/vividpp/base_config.yaml"
 
 Dataset:
   modality: 'Thermal_fs'
