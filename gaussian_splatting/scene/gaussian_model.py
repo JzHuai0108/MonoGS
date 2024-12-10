@@ -31,13 +31,12 @@ from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
 from utils.pose_utils import matrix_to_quaternion, quat_mult
 
-def get_scale(depth_prev, depth_curr):
-    # prev*scale = curr
-    depth_prev_2 = torch.sum(depth_prev * depth_prev)
-    depth_prev_curr = torch.sum(depth_prev * depth_curr)
-    scale  = depth_prev_curr / depth_prev_2
-    return scale
 
+def get_scale(depth_prev, depth_curr):
+    # prev * scale = curr
+    ratio = depth_curr / depth_prev
+    scale = ratio.median().item()
+    return scale
 
 class GaussianModel:
     def __init__(self, sh_degree: int, config=None):
@@ -322,9 +321,9 @@ class GaussianModel:
             i_col = i_col[indices]
             j_row = j_row[indices]
             depth_z = depth_z[indices]
-            print('New gaussians with silhouette downsampled from {} to {}'.format(N, point_cld.size(0)))
+            print('New gaussians with mask downsampled from {} to {}'.format(N, point_cld.size(0)))
         else:
-            print('New gaussians with silhouette {}'.format(N))
+            print('New gaussians with mask {}'.format(N))
 
         new_xyz = point_cld[:, :3].cpu().numpy()
         new_rgb = point_cld[:, 3:].cpu().numpy()
@@ -665,6 +664,7 @@ class GaussianModel:
                 self.optimizer.state[group["params"][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
+                break
         return optimizable_tensors
 
     def _prune_optimizer(self, mask):
@@ -921,58 +921,42 @@ class GaussianModel:
         self.denom[update_filter] += 1
 
     @torch.no_grad()
-    def update_points_pos(self,v_idx,depth,c2w,cfg):
+    def update_points_pos(self, v_idx, depth, c2w):
         '''
         deform the Gaussians anchored to a keyframe given its updated depth and pose.
-        Refer to Splat-SLAM eq 12 and GLORIE-SLAM eq 3 and surrounding text.
 
         Args:
             v_idx (int): the index of the keyframe in depth_video
-            depth (tensor): depth map of that keyframe
+            depth (tensor): latest depth map of that keyframe from the odometry module
             c2w (tensor) : camera pose of that keyframe
-            cfg: config including camera parameters
         '''
-
         depth = depth.to(self.device)
         input_video_idx = self.unique_kfIDs
         input_j = self._input_j
         input_i = self._input_i
-        input_depth_prev = self._input_depth
-        frame_mask = (input_video_idx==v_idx.item())
+        frame_mask = (input_video_idx==v_idx)
         if frame_mask.sum() == 0:
             return
         points_j = input_j[frame_mask]
         points_i = input_i[frame_mask]
-        points_depth_prev = input_depth_prev[frame_mask]
+        points_depth_prev = self._input_depth[frame_mask]
         points_depth = depth[points_j, points_i]
-        mask_invalid_depth = (points_depth==0.0)
-        if mask_invalid_depth.sum() > 0:
-            scale = get_scale(points_depth_prev[~mask_invalid_depth], points_depth[~mask_invalid_depth])
-            points_depth[mask_invalid_depth] = scale * points_depth_prev[mask_invalid_depth]
-        c2w_prev = self._c2w_dict[v_idx.item()]
+        mask_valid_depth = (points_depth > 0.0) & (points_depth_prev > 0.0)
+        if mask_valid_depth.sum() > 0:
+            scale = get_scale(points_depth_prev[mask_valid_depth], points_depth[mask_valid_depth])
+        else:
+            scale = 1.0
+        c2w_prev = self._c2w_dict[v_idx]
         points_prev = self._xyz[frame_mask]
         points_prev_homo = torch.cat([points_prev, torch.ones_like(points_prev[:, :1])], dim=1)
         points_cam_prev = torch.linalg.inv(c2w_prev) @ points_prev_homo.T
 
-        # Extract the z-component of the camera coordinates
-        mu_z = points_cam_prev[2, :]
-
-        # Transform points back to world coordinates with the current c2w matrix
-        points_world = c2w @ points_cam_prev
-
-        # Calculate the stretch factor based on depth changes
-        stretch_factor = (1 + (points_depth - points_depth_prev) / mu_z)
-        print(f'stretch factor min: {stretch_factor.min().item()} '
-              f'max: {stretch_factor.max().item()} '
-              f'median: {stretch_factor.median().item()}')
-        stretch_mask = (stretch_factor < 0.2) | (stretch_factor > 5)
-        stretch_factor[stretch_mask] = 1.0
-
-        # Update the positions in the world space and apply the stretch factor
+        points_world = c2w @ (scale * points_cam_prev)   # (4, N)
         new_xyz = self.get_xyz.clone()
-        new_xyz[frame_mask] = (stretch_factor * points_world)[:3, :].transpose(0, 1)
+        new_xyz[frame_mask] = points_world[:3, :].transpose(0, 1)
+
         new_scaling = self.get_scaling.clone()
-        new_scaling[frame_mask] *= stretch_factor.unsqueeze(-1)
+        new_scaling[frame_mask] *= scale
         new_scaling = self.scaling_inverse_activation(new_scaling)
 
         # Calculate the rotation change and update rotations for the points
@@ -991,5 +975,5 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(new_rotations, "rotation")
         self._rotation = optimizable_tensors["rotation"]
 
-        self._c2w_dict[v_idx.item()] = c2w
+        self._c2w_dict[v_idx] = c2w
         self._input_depth[frame_mask] = points_depth.clone()

@@ -46,6 +46,14 @@ def getWorld2View2(R, t, translate=torch.tensor([0.0, 0.0, 0.0]), scale=1.0):
     return Rt
 
 
+def getWorld2View2Core(R, t):
+    Rt = torch.zeros((4, 4), device=R.device)
+    Rt[:3, :3] = R
+    Rt[:3, 3] = t
+    Rt[3, 3] = 1.0
+    return Rt
+
+
 def getProjectionMatrix(znear, zfar, fovX, fovY):
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
