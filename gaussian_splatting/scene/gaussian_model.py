@@ -253,6 +253,7 @@ class GaussianModel:
         """
         rgb: torch.tensor (H, W, C) [0, 1]
         depth: torch.tensor (H, W)
+        mask: numpy ndarray (HW,)
         """
         if init:
             downsample_factor = self.config["Dataset"]["pcd_downsample_init"]
@@ -305,7 +306,8 @@ class GaussianModel:
         j_row = j_row.reshape(-1)
 
         # Select points based on mask
-        if mask is not None:
+        num_points_to_keep = width * height // downsample_factor
+        if mask is not None and mask.sum() > num_points_to_keep:
             point_cld = point_cld[mask]
             mean3_sq_dist = mean3_sq_dist[mask]
             i_col = i_col[mask]
@@ -313,7 +315,6 @@ class GaussianModel:
             depth_z = depth_z[mask]
 
         N = point_cld.size(0)
-        num_points_to_keep = width * height // downsample_factor
         if N > num_points_to_keep:
             indices = torch.randperm(N)[:num_points_to_keep]
             point_cld = point_cld[indices]
