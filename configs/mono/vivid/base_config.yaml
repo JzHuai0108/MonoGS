@@ -10,7 +10,7 @@ Results:
 Dataset:
   type: 'vivid'
   sensor_type: 'monocular'
-  pcd_downsample: 64
+  pcd_downsample: 32
   pcd_downsample_init: 32
   adaptive_pointsize: True
   point_size: 0.01
@@ -24,10 +24,11 @@ Training:
   init_gaussian_th: 0.005
   init_gaussian_extent: 30
   tracking_itr_num: 100
-  mapping_itr_num: 150
+  mapping_itr_num: 60
+  final_frame_itr_num: 5000
   gaussian_update_every: 150
   gaussian_update_offset: 50
-  gaussian_th: 0.7
+  gaussian_th: 0.2
   gaussian_extent: 1.0
   gaussian_reset: 2001
   size_threshold: 20
@@ -48,7 +49,7 @@ Training:
   single_thread: False
   spherical_harmonics: False
   use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
-  visibility_prune: False
+  visibility_prune: True
 
   lr:
     cam_rot_delta: 0.003
@@ -71,7 +72,7 @@ opt_params:
   densify_from_iter: 500
   densify_until_iter: 15000
   densify_grad_threshold: 0.0002
-  densify_grad_abs_threshold: 0.002
+  densify_grad_abs_threshold: 0.0006
   enable_weight_prune: False
   min_weight: 0.7
 

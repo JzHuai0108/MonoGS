@@ -40,6 +40,7 @@ Training:
   init_gaussian_extent: 30
   tracking_itr_num: 100
   mapping_itr_num: 150
+  final_frame_itr_num: 5000
   gaussian_update_every: 150
   gaussian_update_offset: 50
   gaussian_th: 0.7
