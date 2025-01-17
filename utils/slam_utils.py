@@ -172,8 +172,11 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
 
 
 def get_loss_mapping3(config, render_image, render_depth, viewpoint,
-                      gt_image, gt_depth, depth_cov = None,
+                      gt_image, gt_depth, depth_cov = None, depth_loss_multiplier = 1.0,
                       initialization=False):
+    """
+    depth_loss_multiplier: only effective when depth_cov is valid, i.e., not None
+    """
     if initialization:
         image_ab = render_image
     else:
@@ -197,7 +200,7 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
     depth_pixel_mask = torch.logical_and(gt_depth > 0.01, ~torch.isnan(render_depth)).view(*mask_shape)
     if depth_cov is not None:
         depth_sigma = torch.sqrt(depth_cov)
-        l1_depth = torch.abs((render_depth - gt_depth) / depth_sigma) * depth_pixel_mask
+        l1_depth = torch.abs((render_depth - gt_depth) * depth_loss_multiplier / depth_sigma) * depth_pixel_mask
     else:
         l1_depth = torch.abs(render_depth - gt_depth) * depth_pixel_mask
 
