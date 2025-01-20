@@ -17,7 +17,7 @@ Dataset:
 
 Training:
   adaptive_depth_w: False
-  adaptive_image_w: False # better keep this False as it can cause unstable training.
+  depth_loss_weight: 0.05
   init_itr_num: 1050
   init_gaussian_update: 200
   init_gaussian_reset: 500
@@ -28,7 +28,7 @@ Training:
   final_frame_itr_num: 2600
   gaussian_update_every: 150
   gaussian_update_offset: 50
-  gaussian_th: 0.7
+  gaussian_th: 0.05
   gaussian_extent: 1.0
   gaussian_reset: 2001
   size_threshold: 20
@@ -49,7 +49,7 @@ Training:
   single_thread: False
   spherical_harmonics: False
   use_abs_grad: True # if abs_grad is NOT used, remember to ENLARGE percent_dense to 0.01.
-  visibility_prune: False
+  visibility_prune: True
 
   lr:
     cam_rot_delta: 0.003

@@ -32,7 +32,6 @@ Dataset:
 
 Training:
   adaptive_depth_w: False
-  adaptive_image_w: False
   init_itr_num: 1050
   init_gaussian_update: 200
   init_gaussian_reset: 500

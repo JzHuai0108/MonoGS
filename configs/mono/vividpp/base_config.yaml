@@ -17,7 +17,6 @@ Dataset:
 
 Training:
   adaptive_depth_w: False
-  adaptive_image_w: False # better keep this False as it can cause unstable training.
   init_itr_num: 1050
   init_gaussian_update: 100
   init_gaussian_reset: 500

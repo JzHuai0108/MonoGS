@@ -161,8 +161,6 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
     weight_mask = 1 - diff_depth
 
     l1_depth = torch.abs((depth - gt_depth) * depth_pixel_mask)
-    if "adaptive_image_w" in config["Training"] and config["Training"]["adaptive_image_w"]:
-        diff_img = diff_img * weight_mask
     if "adaptive_depth_w" in config["Training"] and config["Training"]["adaptive_depth_w"]:
         l1_depth = l1_depth * weight_mask
 
@@ -196,7 +194,7 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
     if config["Training"]["monocular"]:
         return diff_img.mean()
 
-    alpha = config["Training"]["alpha"] if "alpha" in config["Training"] else 0.95
+    depth_loss_weight = config["Training"]["depth_loss_weight"] if "depth_loss_weight" in config["Training"] else 0.05
     depth_pixel_mask = torch.logical_and(gt_depth > 0.01, ~torch.isnan(render_depth)).view(*mask_shape)
     if depth_cov is not None:
         depth_sigma = torch.sqrt(depth_cov)
@@ -206,7 +204,7 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
 
     img_loss = diff_img.mean()
     depth_loss = l1_depth.mean()
-    return alpha * img_loss + (1 - alpha) * depth_loss, depth_loss, img_loss, depth_pixel_mask
+    return img_loss + depth_loss_weight * depth_loss, depth_loss, img_loss, depth_pixel_mask
 
 
 def get_median_depth(depth, opacity=None, mask=None, return_std=False):
