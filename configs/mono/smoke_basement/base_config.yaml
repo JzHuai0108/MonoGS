@@ -8,7 +8,7 @@ Results:
   use_wandb: True
 
 Dataset:
-  type: 'rrxio'
+  type: 'smoke_basement'
   sensor_type: 'monocular'
   pcd_downsample: 64
   pcd_downsample_init: 32

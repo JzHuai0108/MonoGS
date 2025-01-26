@@ -169,6 +169,33 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
     return alpha * img_loss + (1 - alpha) * depth_loss
 
 
+def get_stats(image, mask=None):
+    """
+    Computes the median, minimum, and maximum of the image values under the mask.
+
+    Parameters:
+    - image: Tensor of shape (C, H, W) representing the image.
+    - mask: Optional tensor of shape (1, H, W). If provided, stats are computed
+            only for the masked region.
+
+    Returns:
+    - List containing [median, minimum, maximum] of the masked or full image.
+    """
+    # Apply mask if provided
+    if mask is not None:
+        masked_image = image[mask.bool()]
+    else:
+        masked_image = image
+    if masked_image.numel() == 0:
+        print("[WARNING]: Masked image is empty. Cannot compute statistics.")
+        return [0, 0, 0]
+    # Compute statistics
+    med = masked_image.median().item()
+    min_val = masked_image.min().item()
+    max_val = masked_image.max().item()
+    return [med, min_val, max_val]
+
+
 def get_loss_mapping3(config, render_image, render_depth, viewpoint,
                       gt_image, gt_depth, depth_cov = None, depth_loss_multiplier = 1.0,
                       initialization=False):
@@ -189,6 +216,8 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
     _, ssim_map = ssim2(image_ab, gt_image)
     diff_ssim = 1 - ssim_map
     lambda_dssim = config["opt_params"]["lambda_dssim"]
+    dimg_stats = get_stats(diff_img, None)
+    dsim_stats = get_stats(diff_ssim, None)
     diff_img = (1 - lambda_dssim) * diff_img + lambda_dssim * diff_ssim
 
     if config["Training"]["monocular"]:
@@ -197,13 +226,25 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
     depth_loss_weight = config["Training"]["depth_loss_weight"] if "depth_loss_weight" in config["Training"] else 0.05
     depth_pixel_mask = torch.logical_and(gt_depth > 0.01, ~torch.isnan(render_depth)).view(*mask_shape)
     if depth_cov is not None:
+        nan_count = torch.isnan(depth_cov).sum().item()
+        total_pixels = depth_cov.numel()
+        if nan_count > 0:
+            print(f"[WARNING]: There are {nan_count} NaNs in depth_cov out of {total_pixels} pixels")
         depth_sigma = torch.sqrt(depth_cov)
-        l1_depth = torch.abs((render_depth - gt_depth) * depth_loss_multiplier / depth_sigma) * depth_pixel_mask
+        diff_depth = torch.abs(render_depth - gt_depth) / depth_sigma * depth_loss_multiplier
+        l1_depth = diff_depth * depth_pixel_mask
+        ddepth_stats = get_stats(diff_depth, depth_pixel_mask)
     else:
-        l1_depth = torch.abs(render_depth - gt_depth) * depth_pixel_mask
+        diff_depth = torch.abs(render_depth - gt_depth)
+        ddepth_stats = get_stats(diff_depth, depth_pixel_mask)
+        l1_depth = diff_depth * depth_pixel_mask
 
     img_loss = diff_img.mean()
     depth_loss = l1_depth.mean()
+    # print(f"Diff stats: Image [{dimg_stats[0]:.6f}, {dimg_stats[1]:.6f}, {dimg_stats[2]:.6f}], "
+    #       f"SSIM [{dsim_stats[0]:.6f}, {dsim_stats[1]:.6f}, {dsim_stats[2]:.6f}], "
+    #       f"Depth [{ddepth_stats[0]:.6f}, {ddepth_stats[1]:.6f}, {ddepth_stats[2]:.6f}], "
+    #       f"Depth multiplier: {depth_loss_multiplier:.3f}.")
     return img_loss + depth_loss_weight * depth_loss, depth_loss, img_loss, depth_pixel_mask
 
 

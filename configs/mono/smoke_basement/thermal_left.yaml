@@ -1,0 +1,37 @@
+inherit_from: "thirdparty/MonoGS/configs/mono/smoke_basement/base_config.yaml"
+
+Dataset:
+  modality: 'thermal_left'
+
+  dataset_path: "datasets/SmokeBasement/run5"
+  Calibration:
+    raw:
+      fx: 358.009390
+      fy: 356.631007
+      cx: 320.649615
+      cy: 268.477546
+      k1: -0.210408
+      k2: 0.037092
+      p1: 0.000217
+      p2: 0.000702
+      W: 640
+      H: 512
+      png_depth_scale: 100.0
+      distorted: True
+      distortion_model: 'radtan'  
+    opt:
+      # K optimal obtained by cv2.getOptimalNewCameraMatrix() with balance=0.0
+      fx: 284.117788891251
+      fy: 311.78288708362913
+      cx: 322.78853326905767
+      cy: 272.8819581115962
+      k1: 0.0
+      k2: 0.0
+      k3: 0.0
+      k4: 0.0
+      W: 640
+      H: 512
+      png_depth_scale: 100.0
+      distorted: False
+      distortion_model: ''
+

@@ -217,6 +217,52 @@ class RRXIOParser:
             self.frames.append(frame)
 
 
+class SmokeBasementParser:
+    def __init__(self, input_folder, modality, max_dt):
+        self.input_folder = input_folder
+        self.modality = modality
+        self.poses = []
+        self.world_poses = []
+        self.load_poses(self.input_folder, max_dt, frame_rate=32)
+        self.n_img = len(self.color_paths)
+
+    def parse_list(self, filepath, skiprows=0):
+        data = np.loadtxt(filepath, delimiter=",", dtype=np.unicode_, skiprows=skiprows)
+        return data
+
+    def load_poses(self, datapath, max_dt, frame_rate=-1):
+        reldir = 'left/image'
+        reltemperdir = 'left/temperature'
+        if 'left' in self.modality.lower():
+            image_list = os.path.join(self.input_folder, 'left/times.txt')
+        else:
+            reldir = 'right/image'
+            reltemperdir = 'right/temperature'
+            image_list = os.path.join(self.input_folder, 'right/times.txt')
+
+        image_data = self.parse_list(image_list)
+        self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
+
+        for timepair in image_data:
+            color_path = os.path.join(datapath, reldir, timepair[0] + '.png')
+            self.color_paths += [color_path]
+            if not os.path.isfile(color_path):
+                print('Warn: Image file {color_path} does not exist!')
+            self.depth_paths += [os.path.join(datapath, reltemperdir, timepair[0] + '.png')] # placeholder for viz
+
+            T = np.eye(4)
+            self.world_poses.append(T)
+            self.poses += [np.linalg.inv(T)]
+
+            frame = {
+                "file_path": str(color_path),
+                "depth_path": str(color_path),
+                "transform_matrix": (np.linalg.inv(T)).tolist(),
+            }
+
+            self.frames.append(frame)
+
+
 class VIVIDPPParser:
     """
     The parser for the VIVID++ dataset processed by Huai.
@@ -777,6 +823,16 @@ class RRXIODataset(MonocularDataset):
         self.depth_paths = parser.depth_paths
         self.poses = parser.poses
 
+class SmokeBasementDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        modality = config['Dataset']['modality']
+        parser = SmokeBasementParser(dataset_path, modality, 0.08)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+        self.poses = parser.poses
 
 class ReplicaDataset(MonocularDataset):
     def __init__(self, args, path, config):
@@ -928,6 +984,8 @@ def load_dataset(args, path, config):
         return RealsenseDataset(args, path, config)
     elif config["Dataset"]["type"] == "rrxio":
         return RRXIODataset(args, path, config)
+    elif config["Dataset"]["type"] == "smoke_basement":
+        return SmokeBasementDataset(args, path, config)
     elif config["Dataset"]["type"] == "vivid":
         return VIVIDDataset(args, path, config)
     elif config["Dataset"]["type"] == "vividpp":
