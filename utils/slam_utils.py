@@ -169,7 +169,7 @@ def get_loss_mapping2(config, image, depth, viewpoint, opacity, initialization=F
     return alpha * img_loss + (1 - alpha) * depth_loss
 
 
-def get_stats(image, mask=None):
+def get_stats(image, mask=None, anno=""):
     """
     Computes the median, minimum, and maximum of the image values under the mask.
 
@@ -187,7 +187,7 @@ def get_stats(image, mask=None):
     else:
         masked_image = image
     if masked_image.numel() == 0:
-        print("[WARNING]: Masked image is empty. Cannot compute statistics.")
+        print(f"[WARNING]: Masked {anno} is empty. Cannot compute statistics.")
         return [0, 0, 0]
     # Compute statistics
     med = masked_image.median().item()
@@ -216,8 +216,8 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
     _, ssim_map = ssim2(image_ab, gt_image)
     diff_ssim = 1 - ssim_map
     lambda_dssim = config["opt_params"]["lambda_dssim"]
-    dimg_stats = get_stats(diff_img, None)
-    dsim_stats = get_stats(diff_ssim, None)
+    dimg_stats = get_stats(diff_img, None, 'color')
+    dsim_stats = get_stats(diff_ssim, None, 'dsim')
     diff_img = (1 - lambda_dssim) * diff_img + lambda_dssim * diff_ssim
 
     if config["Training"]["monocular"]:
@@ -233,10 +233,10 @@ def get_loss_mapping3(config, render_image, render_depth, viewpoint,
         depth_sigma = torch.sqrt(depth_cov)
         diff_depth = torch.abs(render_depth - gt_depth) / depth_sigma * depth_loss_multiplier
         l1_depth = diff_depth * depth_pixel_mask
-        ddepth_stats = get_stats(diff_depth, depth_pixel_mask)
+        ddepth_stats = get_stats(diff_depth, depth_pixel_mask, 'depth with cov')
     else:
         diff_depth = torch.abs(render_depth - gt_depth)
-        ddepth_stats = get_stats(diff_depth, depth_pixel_mask)
+        ddepth_stats = get_stats(diff_depth, depth_pixel_mask, 'depth w/o cov')
         l1_depth = diff_depth * depth_pixel_mask
 
     img_loss = diff_img.mean()
