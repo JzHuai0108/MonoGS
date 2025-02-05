@@ -21,15 +21,15 @@ Dataset:
       distortion_model: 'radtan'
     opt:
       # K optimal obtained by cv2.getOptimalNewCameraMatrix() with balance=0.0
-      fx: 284.7156306026863
+      fx: 313.23175009966894
       fy: 312.17574076065176
-      cx: 318.93937185862376
+      cx: 350.8832213092527
       cy: 271.73727471875617
       k1: 0.0
       k2: 0.0
       k3: 0.0
       k4: 0.0
-      W: 640
+      W: 704
       H: 512
       png_depth_scale: 100.0
       distorted: False

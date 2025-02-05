@@ -5,7 +5,7 @@ import os
 import cv2
 import numpy as np
 import torch
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 from PIL import Image
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
@@ -226,19 +226,67 @@ class SmokeBasementParser:
         self.load_poses(self.input_folder, max_dt, frame_rate=32)
         self.n_img = len(self.color_paths)
 
-    def parse_list(self, filepath, skiprows=0):
-        data = np.loadtxt(filepath, delimiter=",", dtype=np.unicode_, skiprows=skiprows)
+    def parse_list(self, filepath, delimiter=',', skiprows=0):
+        data = np.loadtxt(filepath, delimiter=delimiter, dtype=np.unicode_, skiprows=skiprows)
         return data
+
+    def linear_interpol(self, pose_data, time):
+        """
+        Interpolates pose data at a given time.
+
+        Parameters:
+        - pose_data: np.ndarray of shape (N, 8), ordered by time, each row is [time, px, py, pz, qx, qy, qz, qw]
+        - time: float, the specific time at which to interpolate the pose
+
+        Returns:
+        - interpolated_pose: np.ndarray of shape (4, 4), the interpolated 4x4 pose matrix at the given time
+        """
+        # Extract times and pose components
+        times = pose_data[:, 0]
+        poses = pose_data[:, 1:]
+
+        interpolated_translation = np.array([np.interp(time, times, poses[:, i]) for i in range(3)])
+        quaternions = Rotation.from_quat(poses[:, 3:7])
+        if time <= times[0]:
+            interpolated_rotation = quaternions[0]
+        elif time >= times[-1]:
+            interpolated_rotation = quaternions[-1]
+        else:
+            slerp = Slerp(times, quaternions)
+            interpolated_rotation = slerp(time)
+
+        rotation_matrix = interpolated_rotation.as_matrix()
+        interpolated_pose = np.eye(4)
+        interpolated_pose[0:3, 3] = interpolated_translation
+        interpolated_pose[0:3, 0:3] = rotation_matrix
+        return interpolated_pose
+
 
     def load_poses(self, datapath, max_dt, frame_rate=-1):
         reldir = 'left/image'
         reltemperdir = 'left/temperature'
+        pose_file = os.path.join(self.input_folder, 'kissicp_poses.txt')
+        lidar_T_sensor = np.eye(4)
         if 'left' in self.modality.lower():
             image_list = os.path.join(self.input_folder, 'left/times.txt')
+            lidar_T_sensor = np.array([[-1, 0, 0, 0.06],
+                                        [0, 0, -1, -0.072],
+                                        [0, -1, 0, -0.145],
+                                        [0, 0, 0, 1]])        
         else:
             reldir = 'right/image'
             reltemperdir = 'right/temperature'
             image_list = os.path.join(self.input_folder, 'right/times.txt')
+            lidar_T_sensor = np.array([[-1, 0, 0, -0.06],
+                                       [0, 0, -1, -0.072],
+                                       [0, -1, 0, -0.145],
+                                       [0, 0, 0, 1]])
+        pose_data = self.parse_list(pose_file, ' ', 0)
+        pose_vals = []
+        for data in pose_data:
+            pose_row = [float(v) for v in data]
+            pose_vals.append(pose_row)
+        pose_data = np.array(pose_vals)
 
         image_data = self.parse_list(image_list)
         self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
@@ -250,7 +298,8 @@ class SmokeBasementParser:
                 print('Warn: Image file {color_path} does not exist!')
             self.depth_paths += [os.path.join(datapath, reltemperdir, timepair[0] + '.png')] # placeholder for viz
 
-            T = np.eye(4)
+            T = self.linear_interpol(pose_data, float(timepair[0]))
+            T = np.dot(T, lidar_T_sensor)
             self.world_poses.append(T)
             self.poses += [np.linalg.inv(T)]
 
